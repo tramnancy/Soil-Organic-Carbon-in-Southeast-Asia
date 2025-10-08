@@ -81,7 +81,7 @@ library(tidyr)
 # Dataset
 ```{r}
 
-soc_data <- read.csv("clean1.csv", stringsAsFactors=FALSE)
+soc_data <- read.csv("Data/clean1.csv", stringsAsFactors=FALSE)
 
 #factoe long and lat --> numeric
 soc_data$lon<-as.numeric(soc_data$Longtitude)
@@ -92,7 +92,7 @@ pts_sf <- st_as_sf(soc_data, coords = c("lon","lat"),crs=4326) #what does 4326 m
 
 #chelsa
 ```{r}
-urls <- readLines("envidatS3paths.txt")
+urls <- readLines("Data/envidatS3paths.txt")
 target_urls <- urls[grepl("bio1_|bio12_", urls)]
 for (u in target_urls) {
   dest <- file.path("data/chelsa", basename(u))
@@ -100,8 +100,8 @@ for (u in target_urls) {
 }
 
 # Load Chelsa Rasters
-r_bio1 <-rast("CHELSA_bio1_1981-2010_V.2.1.tif")
-r_bio12 <- rast("CHELSA_bio12_1981-2010_V.2.1.tif")
+r_bio1 <-rast("../CHELSA_bio1_1981-2010_V.2.1.tif")
+r_bio12 <- rast("../CHELSA_bio12_1981-2010_V.2.1.tif")
 # Stack them
 bio <- c(r_bio1, r_bio12)
 names(bio) <- c("bio1_temp", "bio12_precip")
@@ -144,9 +144,9 @@ Data is extracted from https://bigdata.cgiar.org/srtm-90m-digital-elevation-data
 
 ```{r}
 # the srtm files are downloaded from CSI CGAR (90m)
-dem1<-rast("srtm1.tif")
-dem2<-rast("srtm2.tif")
-dem3<-rast("srtm3.tif")
+dem1<-rast("../srtm1.tif")
+dem2<-rast("../srtm2.tif")
+dem3<-rast("../srtm3.tif")
 points<-data.frame(id=soc_data_climate$id,x=soc_data_climate$lon,y=soc_data_climate$lat)
 
 pts_vec<-vect(points,geom=c("x","y"),crs="EPSG:4326")
