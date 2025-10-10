@@ -69,28 +69,32 @@ library(Matrix)
 library(ggplot2)
 library(rgee)
 library(cowplot)
-#install.packages("geodata")
 library(geodata)
 library(terra)
 library(sf)
 library(soilDB)
 library(tidyr)
-#install.packages("exactextractr")
+library(lme4)
+library(lmerTest) 
+library(performance)
 ```
 
 # Dataset
 ```{r}
-
+#Import dataset
 soc_data <- read.csv("Data/clean1.csv", stringsAsFactors=FALSE)
 
-#factoe long and lat --> numeric
+#factor long and lat --> numeric
 soc_data$lon<-as.numeric(soc_data$Longtitude)
 soc_data$lat<-as.numeric(soc_data$Latitude)
 
-pts_sf <- st_as_sf(soc_data, coords = c("lon","lat"),crs=4326) #what does 4326 mean?
+#create longitude and latitude points for merging dataset 
+pts_sf <- st_as_sf(soc_data, coords = c("lon","lat"),crs=4326) 
 ```
 
-#chelsa
+The pre-clean version of SOC data (from google sheet) has 4341 observations, 20 variables.
+
+# Adding temperature and precipitation data from CHELSA portal (import from raster files)
 ```{r}
 urls <- readLines("Data/envidatS3paths.txt")
 target_urls <- urls[grepl("bio1_|bio12_", urls)]
@@ -102,24 +106,26 @@ for (u in target_urls) {
 # Load Chelsa Rasters
 r_bio1 <-rast("../CHELSA_bio1_1981-2010_V.2.1.tif")
 r_bio12 <- rast("../CHELSA_bio12_1981-2010_V.2.1.tif")
-# Stack them
+
+#Extract & merge with original data
 bio <- c(r_bio1, r_bio12)
 names(bio) <- c("bio1_temp", "bio12_precip")
-#Extract & merge with original data
 vals <- terra::extract(bio, vect(pts_sf))
 soc_data_climate <- cbind(soc_data, vals)
 ```
 
 After the above code chunk, the annual average temperature and annual average 
 
+# Checking depth varation of the dataset
 ```{r}
-
-table(soc_data_climate$depth)
 barplot(table(soc_data_climate$depth))
-
 ```
-Depth:
-- 
+From the depth variation, we classify depth into 3 categories: 
+- Depth 0-30cm
+- Depth 30-60cm
+- Depth 60+ cm
+First, using the package 'stringr', we split the depth into lower and upper bound by taking the sum of the first measure and the last measure of the depth class, divided by 2, then classify them into 3 categories. 
+
 ```{r}
 library(dplyr)
 library(stringr)
@@ -128,7 +134,7 @@ soc_data_climate <- soc_data_climate %>%
   # split depth into lower/upper bounds
   mutate(depth_low  = as.numeric(str_extract(depth, "^[0-9]+")),
          depth_high = as.numeric(str_extract(depth, "[0-9]+$")),
-         depth_mid  = (depth_low + depth_high) / 2) %>%
+         depth_mid  = (depth_high + depth_high) / 2) %>%
   # classify into bins
   mutate(depth_class = case_when(
     depth_mid <= 30 ~ "0-30",
@@ -137,10 +143,13 @@ soc_data_climate <- soc_data_climate %>%
     TRUE ~ NA_character_
   ))
 
+#Checking distribution of depth class
+barplot(table(soc_data_climate$depth_class))
 ```
+The observation mostly still falls under 0-30cm depth. 
 
 # Elevation 
-Data is extracted from https://bigdata.cgiar.org/srtm-90m-digital-elevation-database/ 
+Data is extracted from Raster files from https://bigdata.cgiar.org/srtm-90m-digital-elevation-database/ 
 
 ```{r}
 # the srtm files are downloaded from CSI CGAR (90m)
@@ -164,41 +173,27 @@ soc_data_climate$elev <- coalesce(soc_data_climate$elev,
                                   soc_data_climate$average.elevation)
 ```
 
+# Checking distribution of numeric continuous variables: precipitation, temperature, and elevation
 ```{r}
 library(tidyr)
-# Select numeric columns you want
 plot_data <- soc_data_climate %>%
   select(elev, bio1_temp, bio12_precip) %>%
   pivot_longer(cols = c(elev, bio1_temp, bio12_precip),
                names_to = "variable", values_to = "value")
-
-# histogram faceted by variable
+# Facet Wrap them
 ggplot(plot_data, aes(x = value)) +
   geom_histogram(bins = 30) +
   facet_wrap(~variable, scales = "free") +
   theme_minimal()
 ```
 
-At lower elevation with warmer temperatures, chemical weathering processes such as hydrolysus and oxidation tend to me more rapid. This results in deeper soils rich in clay minerals, and secondary oxides --> more microbial activity, orgamic matter decomposes faster and is incorporated into mineral soil horizons
+At lower elevation with warmer temperatures, chemical weathering processes such as hydro and oxidation tend to me more rapid. This results in deeper soils rich in clay minerals, and secondary oxides --> more microbial activity, organic matter decomposes faster and is incorporated into mineral soil horizons
+
+
+# Convert SOC unit because they are not consistent 
 
 ```{r}
-# ---- Slope ----
-# compute slope rasters for each DEM (units = degrees by default)
-#slope1 <- terrain(dem1, v = "slope", unit = "degrees")
-#slope2 <- terrain(dem2, v = "slope", unit = "degrees")
-#slope3 <- terrain(dem3, v = "slope", unit = "degrees")
-
-#s1 <- terra::extract(slope1, pts_vec)[,2]
-#s2 <- terra::extract(slope2, pts_vec)[,2]
-#s3 <- terra::extract(slope3, pts_vec)[,2]
-
-# combine slope values (use first non-NA from s1, s2, s3)
-#soc_data_climate$slope <- coalesce(s1, s2, s3)
-```
-
-# Convert SOC unit
-```{r}
-# Convert SOC units 
+# Convert SOC units into concentration (by mass)
 soc_data_climate$SOC_gKg <- with(soc_data_climate,
   ifelse(soc.value_units == "%", soc.value * 10,
   ifelse(soc.value_units == "g_kg", soc.value,
@@ -206,6 +201,7 @@ soc_data_climate$SOC_gKg <- with(soc_data_climate,
   ifelse(soc.value_units == "mg_g", soc.value,                # 1 mg/g = 1 g/kg
   ifelse(soc.value_units == "mg_kg", soc.value / 1000, NA))))))
  
+# Convert SOC units into stock (by area)
 soc_data_climate$SOC_MgHa <- with(soc_data_climate,
   ifelse(soc.value_units == "Mg_ha", soc.value,
   ifelse(soc.value_units == "g_m2", soc.value * 0.01,   # 1 g/m² = 0.01 Mg/ha
@@ -214,7 +210,7 @@ soc_data_climate$SOC_MgHa <- with(soc_data_climate,
   NA)))))
 ```
 
-# Log Transformation the SOC unit
+# Log Transformation the SOC unit because there are super huge outliers
 
 ```{r}
 library(dplyr)
@@ -223,7 +219,7 @@ library(dplyr)
 summary(soc_data_climate$SOC_MgHa)
 summary(soc_data_climate$SOC_gKg)
 
-# define a safe log transform function
+# log transform function
 safe_log <- function(x, add = NULL) {
   # add: if NULL, compute minimal shift so all values > 0
   if (is.null(add)) {
@@ -234,40 +230,62 @@ safe_log <- function(x, add = NULL) {
   log(x + add)
 }
 
-# create transformed vars in dataframe
+# create transformed variable
 soc_unit <- soc_data_climate %>%
   mutate(
     SOC_MgHa_finite = ifelse(is.finite(SOC_MgHa), SOC_MgHa, NA_real_),
     SOC_gKg_finite = ifelse(is.finite(SOC_gKg), SOC_gKg, NA_real_)
   )
-# pick one to transform; here we transform SOC_MgHa (stock)
-# if there are zeros/negatives, we use safe_log to shift
+# Transform both SOC_MgHa and SOC_gKg
 min_SOC_mgha <- min(soc_data$SOC_MgHa_finite, na.rm = TRUE)
 min_SOC_gkg <- min(soc_data$SOC_gkg_finite, na.rm = TRUE)
-shift_mgha <- ifelse(min_SOC <= 0, abs(min_SOC_mgha) + 1e-6, 0)
-shift_gkg <- ifelse(min_SOC <= 0, abs(min_SOC_gkg) + 1e-6, 0)
+shift_mgha <- ifelse(min_SOC_mgha <= 0, abs(min_SOC_mgha) + 1e-6, 0)
+shift_gkg <- ifelse(min_SOC_gkg <= 0, abs(min_SOC_gkg) + 1e-6, 0)
 
 soc_unit <- soc_unit %>%
   mutate(
     log_SOC_MgHa = safe_log(SOC_MgHa_finite, add = shift_mgha),
     log_SOC_gKg = safe_log(SOC_gKg_finite, add = shift_gkg)
   )
-summary(soc_unit$log_SOC_MgHa)
-summary(soc_unit$log_SOC_gKg)
-
 ```
 
+# Summary log measurement of SOC_MgHa (stock)
 ```{r}
-# packages
-library(lme4)
-library(lmerTest)   # gives p-values
-library(performance) # for check_collinearity etc.
+summary(soc_unit$log_SOC_MgHa)
+```
 
-# prepare variables
+# Summary log measurement of SOC_gKg (concentration)
+```{r}
+summary(soc_unit$log_SOC_gKg)
+```
+
+# Secondary descriptor overtime
+```{r}
+soc_unit %>%
+  group_by(secondary_descriptor, year) %>%
+  summarise(mean_SOC = mean(SOC_gKg, na.rm = TRUE)) %>%
+  ggplot(aes(x = year, y = mean_SOC)) +
+  geom_line() + geom_point()+
+  facet_wrap(~secondary_descriptor, scales = "free_y") +
+  labs(
+    title = "SOC concentration over time by land use, intervention, and agroforestry practices",
+    x = "Year",
+    y = "Average SOC (Mg/Ha)"
+  ) +
+  theme_light()
+
+```
+This is so ugly 
+
+# Testing mixed-effect model
+```{r}
+# Create another dataset called "soc_main", factoring the variables needed
 soc_main <- soc_unit %>%
   mutate(
     depth_class = factor(depth_class, ordered = FALSE),
     main_descriptor = factor(main_descriptor),
+    secondary_descriptor=factor(secondary_descriptor),
+    additional_descriptor=factor(additional_descriptor),
     labmethod = factor(labmethod),
     crop=factor(crop),
     # scale continuous predictors for easier interpretation
@@ -276,53 +294,54 @@ soc_main <- soc_unit %>%
     precip_s = scale(bio12_precip)
   )
 
-# simple LMM: log_SOC_MgHa predicted by descriptors + site random intercept
-mod_lmm1 <- lmer(log_SOC_MgHa ~ depth_class + elevation_s + temp_s + precip_s + labmethod + main_descriptor +
+# log_SOC_MgHa measured by descriptors + site 
+mod_lmm1 <- lmer(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + labmethod + secondary_descriptor +
                   (1 | id), data = soc_main, REML = FALSE)
 
 summary(mod_lmm1)
-anova(mod_lmm1)        # type I tests
-# for Type III F-tests you can use car::Anova on the lmerTest model:
-library(car)
-Anova(mod_lmm1, type = "III")
+```
+
+```{r}
+# residuals, qq-plot
+plot(mod_lmm1)    # residuals vs fitted
+qqnorm(resid(mod_lmm1)); qqline(resid(mod_lmm1))
+```
+
+```{r}
 
 # check collinearity
 check_collinearity(mod_lmm1)
 
-# optionally add random slopes if warranted:
-mod_lmm2 <- lmer(log_SOC_MgHa ~ depth_class + elevation_s + temp_s + precip_s + labmethod + main_descriptor +
+# another mixed model test, controlling experiment year and site id
+mod_lmm2 <- lmer(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + labmethod + secondary_descriptor +
                   (1 + exp_year | id), data = soc_main, REML = FALSE)
 summary(mod_lmm2) #--> there is no different between year / elevation
-
-anova(mod_lmm1, mod_lmm2)  # compare via likelihood ratio test
-# residuals, qq-plot
-plot(mod_lmm1)    # residuals vs fitted
-qqnorm(resid(mod_lmm1)); qqline(resid(mod_lmm1))
-
-# better: DHARMa for residual diagnostics (handles LMM residual complexities)
-library(DHARMa)
-simres <- simulateResiduals(mod_lmm1)
-plot(simres)
-
 ```
 
 ```{r}
-barplot(table(soc_data_climate$depth_class))
+# residuals, qq-plot
+plot(mod_lmm2)    # residuals vs fitted
+qqnorm(resid(mod_lmm2)); qqline(resid(mod_lmm2))
 ```
 
+# Distribution of published years of articles
 ```{r}
 barplot(table(soc_data_climate$year))
 ```
 
+# Distribution of experiment year
 ```{r}
 barplot(table(soc_data_climate$exp_year))
 ```
 
+# Distribution of country's article
 ```{r}
 ggplot(soc_data_climate, aes(x = country)) +
   geom_bar()+theme_minimal()
 ```
 
+# Distribution of crops
+won't use crop as a variable in research
 ```{r}
 crop_counts <- soc_data_climate %>%
   count(crop, sort = TRUE)
@@ -334,7 +353,7 @@ ggplot(crop_counts %>% slice_max(n, n = 20), aes(x = reorder(crop, n), y = n)) +
   theme_minimal()
 ```
 
-
+# distribution of SOC_MgHa and SOC_gKg before log transformation
 ```{r}
 soc <- soc_data_climate %>%
   select(SOC_gKg, SOC_MgHa) %>%
@@ -345,675 +364,6 @@ ggplot(soc, aes(x = variable, y = value)) +
   geom_boxplot() +
   labs(x = "SOC Variable", y = "Value", title = "SOC distributions") +
   theme_minimal()
-
-```
-
-```{r}
-hier <- soc_data_climate %>%
-  count(main_descriptor, secondary_descriptor, additional_descriptor, name = "n") %>%
-  ungroup()
-
-library(treemapify)
-
-ggplot(hier, aes(area = n, fill = main_descriptor,
-                 subgroup = secondary_descriptor, label = additional_descriptor)) +
-  geom_treemap() +
-  geom_treemap_subgroup_border() +
-  geom_treemap_subgroup_text(
-    place = "centre", 
-    colour = "white", 
-    size = 10,       # fixed font size (try 2–4 depending on plot size)
-    grow = FALSE,   # prevent scaling by box size
-    fixed = TRUE
-  ) +
-  geom_treemap_text(
-    aes(label = paste(additional_descriptor, "\n", n)),
-    place = "topleft",
-    size = 7,     # fixed font size
-    grow = FALSE,
-    reflow = TRUE,
-    fixed = TRUE
-  )
-
-
-ggplot(hier, aes(area = n, fill = main_descriptor,
-               label = additional_descriptor, subgroup = secondary_descriptor)) +
-  geom_treemap() +
-  geom_treemap_subgroup_border(colour = "white", size =0.6) +
-  geom_treemap_subgroup_text(place = "centre",size=10, grow = FALSE,
-                             alpha = 0.25, colour = "black",
-                             fontface = "italic", fixed=FALSE) +
-  geom_treemap_text(colour = "white", place = "topleft",
-                    size = 7, grow = FALSE,fixed = FALSE) 
-```
-
-# Add thickness
-```{r}
-parse_depth <- function(depth_str) {
-  if(is.na(depth_str) || depth_str == "") {
-    return(list(top = NA_real_, bottom = NA_real_, thick = NA_real_))
-  }
-  s <- as.character(depth_str)
-  # find numbers (works for most common formats)
-  nums <- as.numeric(str_extract_all(s, "\\d+\\.*\\d*")[[1]])
-  if(length(nums) >= 2) {
-    top <- nums[1]; bottom <- nums[2]
-  } else if(length(nums) == 1) {
-    # treat single number as bottom with top = 0 if plausible, otherwise keep NA
-    top <- 0; bottom <- nums[1]
-  } else {
-    return(list(top = NA_real_, bottom = NA_real_, thick = NA_real_))
-  }
-  thick <- bottom - top
-  if(is.na(thick) || thick <= 0) thick <- NA_real_
-  return(list(top = top, bottom = bottom, thick = thick))
-}
-
-# ---- apply to your dataframe (assume it's soc_data_climate and depth col is 'depth') ----
-# parse depths into numeric columns top, bottom, thickness
-depth_parsed <- lapply(soc_data_climate$depth, parse_depth)
-
-depth_df <- do.call(rbind, lapply(depth_parsed, function(x) data.frame(top=x$top, bottom=x$bottom, thick=x$thick)))
-soc_data_climate$thickness <- depth_df$thick
-```
-
-```{r}
-library(ggplot2)
-ggplot(point, aes(x = lon, y = lat)) + geom_point()
-```
-```{r}
-# Example: Hanoi
-lon <- 105.8
-lat <- 21.0
-
-url <- paste0("https://rest.isric.org/soilgrids/v2.0/properties/query?",
-              "lon=", lon, "&lat=", lat, "&property=clay,sand,silt,bdod",
-              "&depth=0-5cm")
-
-jsonlite::fromJSON(url)
-
-```
-
-
-```{r}
-library(terra)
-r <- bio  # SpatRaster from WorldClim
-# buffer extraction example
-library(sf)
-pts_sf <- st_as_sf(points, coords = c("lon","lat"), crs = 4326)
-pts_buf <- st_buffer(pts_sf, dist = 1000)  # 1 km buffer (in degrees? prefer projected CRS)
-# Reproject to metric CRS first
-pts_buf_m <- st_transform(pts_buf, 3857)
-# extract mean over buffer (use exactextractr for polygons)
-library(exactextractr)
-vals_buffer <- exactextractr::exact_extract(r, pts_buf_m, fun='mean')
-
-```
-
-
-```{r}
-# ----- 1. Country-level summaries for mapping -----
-# Make sure columns names exist; adjust strings if necessary
-temp_col <- "average.annual.temperature"
-precip_col <- "average.annual.precipitation"
-country_col <- "country"
-
-if (!all(c(temp_col, precip_col, country_col) %in% names(ml_data))) {
-  stop("One of the required columns (temperature/precipitation/country) is missing. Check column names.")
-}
-
-#This code create a subset of 9 countries in Southeast Asia with their mean temperature and precipitation, sample size
-country_summary <- ml_data %>%
-  filter(!is.na(.data[[country_col]])) %>%
-  group_by(country = .data[[country_col]]) %>%
-  summarize(
-    mean_temp = mean(.data[[temp_col]], na.rm = TRUE),
-    mean_precip = mean(.data[[precip_col]], na.rm = TRUE),
-    n = n(),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    country_low = tolower(country)
-  )
-
-# ----- 2. Create world map data & join by country name (case-insensitive) -----
-world_map <- map_data("world") %>%
-  mutate(region_low = tolower(region))
-
-# Quick helper to map some common name differences (you can expand as needed)
-synonyms <- tribble::tribble(
-  ~mapname,             ~countryname,
-  "myanmar",            "myanmar",     # maps uses 'myanmar'
-  "laos",               "laos",
-  "timor-leste",        "timor-leste",
-  "brunei darussalam",  "brunei",
-  "vietnam",            "vietnam",
-  "philippines",        "philippines",
-  "malaysia",           "malaysia",
-  "indonesia",          "indonesia",
-  "thailand",           "thailand",
-  "cambodia",           "cambodia",
-  "singapore",          "singapore"
-)
-# Create a lookup: map region name -> country summary (if exists)
-# We'll left_join by region_low == country_low; missing will be NA and plotted gray.
-
-map_df <- world_map %>%
-  left_join(country_summary, by = c("region_low" = "country_low"))
-
-# Restrict plotting window roughly to Southeast Asia long/lat bounds:
-lon_limits <- c(90, 155)
-lat_limits <- c(-13, 25)
-```
-
-
-```{r}
-# ----- 3. Precipitation map -----
-p_precip <- ggplot(map_df, aes(long, lat, group = group)) +
-  geom_polygon(aes(fill = mean_precip), color = "gray60", size = 0.2) +
-  coord_quickmap(xlim = lon_limits, ylim = lat_limits) +
-  scale_fill_viridis(option = "C", na.value = "gray95",
-                     name = "Avg annual\nprecipitation (mm)") +
-  labs(title = "Country-average annual precipitation (dataset)",
-       subtitle = "Values are dataset means for points in each country") +
-  theme(
-    axis.title = element_blank(),
-    panel.grid = element_blank(),
-    legend.position = "right"
-  )
-p_precip
-```
-
-
-```{r}
-p_temp<-ggplot(map_df, aes(long, lat, group = group)) +
-  geom_polygon(aes(fill = mean_temp), color = "gray60", size = 0.2) +
-  coord_quickmap(xlim = lon_limits, ylim = lat_limits) +
-  scale_fill_viridis(option = "A", na.value = "gray95",
-                     name = "Avg annual\ntemperature (°C)") +
-  labs(title = "Country-average annual temperature (dataset)",
-       subtitle = "Values are dataset means for points in each country") +
-  theme(
-    axis.title = element_blank(),
-    panel.grid = element_blank(),
-    legend.position = "right"
-  )
-p_temp
-```
-
-
-```{r}
-# Save maps
-ggsave("map_avg_precip.png", p_precip, width = 8, height = 6, dpi = 300)
-ggsave("map_avg_temp.png", p_temp, width = 8, height = 6, dpi = 300)
-```
-
-
-```{r}
-# ----- 5. Prepare features for ML (RF and XGBoost) -----
-# Choose predictors you mentioned (adjust list if your column names differ)
-predictors <- c("thickness", "topDepth",
-                "average.annual.precipitation", "average.annual.temperature",
-                "labmethod", "tillage", "organic_amend", "fertilization", "crop_system", "country")
-
-# Keep only available predictors
-predictors <- intersect(predictors, names(ml_data))
-cat("Using predictors:", paste(predictors, collapse = ", "), "\n")
-
-ml_df <- ml_data %>%
-  select(SOC_MgHa, all_of(predictors)) %>%
-  filter(!is.na(SOC_MgHa))  # ensure target present
-
-# Convert categorical predictors to factors
-cat_vars <- predictors[sapply(ml_df[predictors], function(x) !is.numeric(x))]
-ml_df[cat_vars] <- lapply(ml_df[cat_vars], as.factor)
-
-# Quick numeric imputation (median) for any numeric NAs among chosen predictors:
-num_vars <- intersect(predictors, names(ml_df))[sapply(ml_df[predictors], is.numeric)]
-for (v in num_vars) {
-  na_idx <- is.na(ml_df[[v]])
-  if (any(na_idx)) {
-    ml_df[[v]][na_idx] <- median(ml_df[[v]], na.rm = TRUE)
-    message("Imputed median for ", v, " (", sum(na_idx), " NAs).")
-  }
-}
-```
-
-
-```{r}
-# ----- 6. Random Forest (ranger) fit on full data for variable importance -----
-set.seed(42)
-rf_fit <- ranger::ranger(
-  formula = SOC_MgHa ~.,
-  data = ml_df,
-  importance = "permutation",
-  num.trees = 500
-)
-rf_imp <- as.data.frame(rf_fit$variable.importance, stringsAsFactors = FALSE)
-rf_imp <- tibble::rownames_to_column(rf_imp, var = "feature")
-colnames(rf_imp)[2] <- "importance"
-rf_imp <- rf_imp %>% arrange(desc(importance))
-```
-
-
-```{r}
-# ----- 7. XGBoost fit (we need a numeric model matrix) -----
-# Create model matrix (one-hot for categorical)
-mm <- model.matrix(SOC_MgHa ~ . - 1, data = ml_df)  # drops intercept
-dtrain <- xgb.DMatrix(data = mm, label = ml_df$SOC_MgHa)
-
-xgb_params <- list(objective = "reg:squarederror",
-                   max_depth = 6, eta = 0.05, subsample = 0.8, colsample_bytree = 0.8)
-set.seed(42)
-xgb_nrounds <- 200
-xgb_mod <- xgb.train(params = xgb_params, data = dtrain, nrounds = xgb_nrounds, verbose = 0)
-
-xgb_imp <- xgb.importance(model = xgb_mod)
-# xgb_imp is a data.frame with columns Feature, Gain, Cover, Frequency
-xgb_imp <- xgb_imp %>% arrange(desc(Gain))
-```
-
-
-```{r}
-# ----- 8. Get top 5 predictors from each model -----
-top5_rf <- rf_imp %>% slice_max(order_by = importance, n = 5)
-top5_xgb <- xgb_imp %>% slice_max(order_by = Gain, n = 5)
-```
-
-
-```{r}
-# ----- 9. Friendly renaming function for readability -----
-pretty_name <- function(var) {
-  # handle model.matrix dummy names like 'crop_systemrice' or 'countryThailand'
-  v <- as.character(var)
-  # Common full-name replacements
-  v <- gsub("^average\\.annual\\.precipitation$", "Avg annual precipitation (mm)", v)
-  v <- gsub("^average\\.annual\\.temperature$", "Avg annual temperature (°C)", v)
-  v <- gsub("^thickness$", "Sampling thickness (cm)", v)
-  v <- gsub("^topDepth$", "Top depth (cm)", v)
-  # handle prefixes:
-  v <- gsub("^labmethod", "Lab method ", v)
-  v <- gsub("^tillage", "Tillage ", v)
-  v <- gsub("^organic_amend", "Organic amendment ", v)
-  v <- gsub("^fertilization", "Fertilization ", v)
-  v <- gsub("^crop_system", "Crop system ", v)
-  v <- gsub("^country", "Country ", v)
-  # model.matrix style: replace '.' or '_' with space and clean
-  v <- gsub("\\.", " ", v)
-  v <- gsub("_", " ", v)
-  # tidy up multiple spaces
-  v <- gsub(" +", " ", v)
-  # trim
-  v <- trimws(v)
-  # Capitalize first letter
-  v <- paste0(toupper(substr(v,1,1)), substr(v,2,nchar(v)))
-  return(v)
-}
-```
-
-
-```{r}
-# Build data frames for plotting
-rf_plot_df <- top5_rf %>%
-  mutate(pretty = sapply(feature, pretty_name)) %>%
-  arrange(importance)  # for horizontal bar order
-
-xgb_plot_df <- top5_xgb %>%
-  rename(importance = Gain, feature = Feature) %>%
-  mutate(pretty = sapply(feature, pretty_name)) %>%
-  arrange(importance)
-```
-
-
-```{r}
-# ----- 10. Plot top-5 bars (horizontal) -----
-p_rf <- ggplot(rf_plot_df, aes(x = reorder(pretty, importance), y = importance)) +
-  geom_col(fill = "#1f78b4", width = 0.7) +
-  coord_flip() +
-  labs(title = "Random Forest: Top 5 predictors",
-       x = "", y = "Permutation importance") +
-  theme_minimal(base_size = 12)
-p_rf
-```
-
-
-```{r}
-p_xgb <- ggplot(xgb_plot_df, aes(x = reorder(pretty, importance), y = importance)) +
-  geom_col(fill = "#33a02c", width = 0.7) +
-  coord_flip() +
-  labs(title = "XGBoost: Top 5 predictors",
-       x = "", y = "Importance (gain)") +
-  theme_minimal(base_size = 12)
-p_xgb
-```
-
-
-```{r}
-# Save plots
-ggsave("rf_top5.png", p_rf, width = 7, height = 4, dpi = 300)
-ggsave("xgb_top5.png", p_xgb, width = 7, height = 4, dpi = 300)
-```
-
-
-```{r}
-# Optionally combine map(s) and importance plots in one figure for the paper
-library(cowplot)
-combined <- plot_grid(p_rf, p_xgb,
-                      labels = c("A", "B"),
-                      ncol = 2, align = "hv")
-combined
-
-library(patchwork)
-
-combined <- (p_precip + theme(legend.position = "right") | 
-             p_temp + theme(legend.position = "right")) /
-            (p_rf | p_xgb)
-
-combined + plot_annotation(tag_levels = "A")
-
-#ggsave("combined_figure.png", combined, width = 14, height = 10, dpi = 300)
-
-#cat("All done. Outputs saved:\n - map_avg_precip.png\n - map_avg_temp.png\n - rf_top5.png\n - xgb_top5.png\n - combined_figure.png\n")
-
-```
-
-## upper code ends here
-
-```{r}
-soc_data <-read.csv("SOC_dataset.csv", stringsAsFactors = FALSE)
-```
-
-```{r}
-# 1. coords fallback
-soc_data <- soc_data %>%
-  mutate(
-    rep.lat = as.numeric(rep.lat),
-    rep.long = as.numeric(rep.long),
-    near.lat = as.numeric(near.lat),
-    near.long = as.numeric(near.long),
-    rep.lat = ifelse(is.na(rep.lat), near.lat, rep.lat),
-    rep.long = ifelse(is.na(rep.long), near.long, rep.long)
-  ) %>%
-  filter(!is.na(rep.lat) & !is.na(rep.long))
-```
-
-```{r}
-area_unit <- c("Mg_ha","kg_ha","kg_m2","g_m2")
-area_unit_data <- subset(soc_data, soc.value_units %in% area_unit)
-
-# Convert SOC units to Mg/ha
-area_unit_data$SOC_MgHa <- with(area_unit_data, ifelse(soc.value_units =="Mg_ha", soc.value,
-                                   ifelse(soc.value_units =="kg_ha", soc.value/1000,
-                                          ifelse(soc.value_units =="kg_m2", soc.value*10,
-                                                 ifelse(soc.value_units =="g_m2", soc.value*0.1, NA)))))
-
-#Drop rows with NA just to make sure
-area_unit_data <-subset(area_unit_data,!is.na(SOC_MgHa))
-```
-
-```{r}
-# 5. Depth parse (assuming depth like "0-10")
-parse_depth <- function(d){
-  if(is.na(d)) return(list(top=NA_real_, thickness=NA_real_))
-  s <- gsub("cm","", as.character(d))
-  if(grepl("-", s)){
-    p <- str_split(s, "-")[[1]] %>% as.numeric()
-    return(list(top = p[1], thickness = p[2] - p[1]))
-  } else if(grepl("\\+", s)){
-    top <- as.numeric(gsub("\\+","", s))
-    return(list(top = top, thickness = NA_real_))
-  } else return(list(top=NA_real_, thickness=NA_real_))
-}
-depths <- lapply(area_unit_data$depth, parse_depth)
-area_unit_data$topDepth <- sapply(depths, `[[`, "top")
-area_unit_data$thickness <- sapply(depths, `[[`, "thickness")
-```
-
-# 6. Text-clean helpers
-
-```{r}
-clean_text <- function(x) tolower(trimws(as.character(ifelse(is.na(x), "", x))))
-
-area_unit_data <- area_unit_data %>%
-  mutate(
-    main_clean = clean_text(main_descriptor),
-    sec_clean  = clean_text(secondary_descriptor),
-    add_clean  = clean_text(additional_descriptor),
-    crop_clean = clean_text(crop)
-  )
-```
-
-# 7. Classify tillage, organic amendments, fertilization, crop system
-
-```{r}
-area_unit_data <- area_unit_data %>%
-  mutate(
-    tillage = case_when(
-      str_detect(sec_clean, "no[- ]?till|zero[- ]?till|conservation") | str_detect(add_clean, "no[- ]?till") ~ "no-till",
-      str_detect(sec_clean, "reduced|minimum|min[- ]?till") ~ "reduced",
-      str_detect(sec_clean, "conventional|plough|plow|till") ~ "conventional",
-      TRUE ~ "unknown"
-    ),
-    organic_amend = case_when(
-      str_detect(add_clean, "manure|compost|residu|mulch|straw|biosolid|leaf litter") | str_detect(sec_clean, "manure|compost") ~ "yes",
-      str_detect(add_clean, "without fertilization|no amendment|no residue") ~ "no",
-      TRUE ~ "unknown"
-    ),
-    fertilization = case_when(
-      str_detect(add_clean, "\\b(fertilizer|npk|urea|ammonium|nitrate|phosphate|kcl|chemical)\\b") ~ "synthetic",
-      str_detect(add_clean, "\\b(manure|compost|organic)\\b") ~ "organic",
-      str_detect(add_clean, "without fertilization|no fertilization|no fertilizer") ~ "none",
-      TRUE ~ "unknown"
-    ),
-    crop_system = case_when(
-      str_detect(main_clean, "agroforestry") | str_detect(crop_clean, "agroforestry") ~ "agroforestry",
-      str_detect(main_clean, "perennial|plantation") | str_detect(crop_clean, "oil palm|rubber") ~ "perennial",
-      str_detect(main_clean, "annual|cropping") | str_detect(crop_clean, "rice|maize|soy") ~ ifelse(str_detect(crop_clean, "rice"), "rice", "annual"),
-      TRUE ~ "other"
-    )
-  )
-```
-
-# 8. Impute climate variables by country median then global median
-
-```{r}
-temp_col <- names(area_unit_data)[grepl("temperature", names(area_unit_data), ignore.case=TRUE)][1]
-prec_col <- names(area_unit_data)[grepl("precip", names(area_unit_data), ignore.case=TRUE)][1]
-
-if(!is.null(temp_col)) area_unit_data[[temp_col]] <- as.numeric(area_unit_data[[temp_col]])
-if(!is.null(prec_col)) area_unit_data[[prec_col]] <- as.numeric(area_unit_data[[prec_col]])
-
-if("country" %in% names(area_unit_data)){
-  for(col in c(temp_col, prec_col)){
-    if(!is.null(col)){
-      area_unit_data[[col]] <- ave(area_unit_data[[col]], area_unit_data$country, FUN = function(x) { x[is.na(x)] <- median(x, na.rm=TRUE); x })
-      area_unit_data[[col]][is.na(area_unit_data[[col]])] <- median(area_unit_data[[col]], na.rm=TRUE)
-    }
-  }
-} else {
-  for(col in c(temp_col, prec_col)){
-    if(!is.null(col)) area_unit_data[[col]][is.na(area_unit_data[[col]])] <- median(area_unit_data[[col]], na.rm=TRUE)
-  }
-}
-```
-
-# not do yet
-```{r}
-# 9. Save
-write_csv(ml_data, "ML_data.csv")
-cat("Saved SOC_dataset_BC_cleaned.csv with", nrow(df), "rows\n")
-
-```
-
-```{r}
-soc_data_spatial <- soc_data_spatial %>%
-  select(SOC_MgHa, main_descriptor, secondary_descriptor, additional_descriptor,
-         average.annual.temperature, average.annual.precipitation,
-         topDepth, thickness, rep.lat, rep.long)
-```
-
-
-```{r}
-# ml_spatial_rf_xgb.R
-# Reproduce ML on cleaned 840 rows using only selected variables
-# Required packages: dplyr, readr, sf, caret, ranger, xgboost, Matrix, ggplot2
-
-
-# ---- 1. load cleaned file ----
-data_path <- "SOC_dataset_BC_cleaned.csv"  # path to the cleaned 840-row CSV you already have
-df <- read_csv(data_path, guess_max = 20000)
-cat("Rows loaded:", nrow(df), "\n")
-
-# ---- 2. select variables you specified (rename to match your file if needed) ----
-# update these names to match exact column names in your csv
-temp_col <- c("average.annual.temperature") %>% intersect(names(df)) %>% first()
-prec_col <- c("average annual precipitation", "average.annual.precipitation") %>% intersect(names(df)) %>% first()
-
-num_vars <- c("thickness", "topDepth", "average.annual.temperature", "average.annual.precipitation") %>% intersect(names(area_unit_data))
-cat_vars <- c("labmethod","tillage","organic_amend","fertilization","crop_system","country","main_clean","sec_clean","add_clean","crop_clean") %>% intersect(names(area_unit_data))
-
-# check
-cat("Using numeric:", paste(num_vars, collapse=", "), "\n")
-cat("Using categorical:", paste(cat_vars, collapse=", "), "\n")
-
-# subset and drop rows missing target or coords
-ml_data <- area_unit_data %>%
-  filter(!is.na(SOC_MgHa)) %>%
-  filter(!is.na(rep.lat) & !is.na(rep.long)) %>%
-  select(SOC_MgHa, rep.long, rep.lat, all_of(num_vars), all_of(cat_vars))
-
-cat("Rows available for modelling:", nrow(ml_data), "\n")
-```
-
-
-```{r}
-# ---- 3. impute numeric with median if any NAs remain ----
-for (v in num_vars) {
-  if (any(is.na(ml_data[[v]]))) {
-    med <- median(ml_data[[v]], na.rm = TRUE)
-    ml_data[[v]][is.na(ml_data[[v]])] <- med
-    cat("Imputed median for", v, "=", med, "\n")
-  }
-}
-```
-
-
-```{r}
-# ---- 4. reduce cardinality of categorical variables (keep top K levels) ----
-reduce_card <- function(x, K = 12) {
-  x <- as.character(x)
-  x[is.na(x) | x==""] <- "Unknown"
-  top <- names(sort(table(x), decreasing = TRUE))[1:min(K, length(unique(x)))]
-  x[!x %in% top] <- "Other"
-  factor(x)
-}
-for (v in cat_vars) ml_data[[v]] <- reduce_card(ml_data[[v]], K = 12)
-```
-
-
-```{r}
-# ---- 5. create spatial clusters (kmeans on coords) -> use as group folds ----
-coords <- as.matrix(ml_data[, c("rep.long", "rep.lat")])
-set.seed(42)
-k <- 5  # number of spatial folds (adjustable)
-km <- kmeans(coords, centers = k, nstart = 20)
-ml_data$.sp_cluster <- factor(km$cluster)
-table(ml_data$.sp_cluster)
-```
-
-
-```{r}
-# ---- 6. prepare training matrices ----
-# numeric matrix
-X_num <- as.matrix(ml_data[, num_vars, drop = FALSE])
-
-# categorical one-hot (sparse)
-if (length(cat_vars) > 0) {
-  dummies <- model.matrix(~ . - 1, data = ml_data[, cat_vars, drop = FALSE])
-  X_cat <- as.matrix(dummies)
-} else {
-  X_cat <- matrix(nrow = nrow(ml_data), ncol = 0)
-}
-
-X <- cbind(X_num, X_cat)
-y <- ml_data$SOC_MgHa
-```
-
-
-```{r}
-# ---- 7. spatial cross-validation using group folds (GroupKFold emulation) ----
-groups <- ml_data$.sp_cluster
-unique_groups <- unique(groups)
-
-spatial_cv <- function(model_type = c("ranger", "xgb"), params = list()) {
-  preds <- numeric(length(y))
-  rmses <- c(); r2s <- c()
-  for (g in unique_groups) {
-    train_idx <- which(groups != g)
-    test_idx  <- which(groups == g)
-    Xtr <- X[train_idx, , drop=FALSE]; ytr <- y[train_idx]
-    Xte <- X[test_idx, , drop=FALSE]; yte <- y[test_idx]
-    if (model_type == "ranger") {
-      df_tr <- data.frame(y = ytr, Xtr)
-      rf <- ranger::ranger(y ~ ., data = df_tr,
-                           num.trees = params$num.trees %||% 300,
-                           max.depth = params$max.depth %||% 12,
-                           mtry = params$mtry %||% floor(ncol(Xtr)/3),
-                           importance = "permutation")
-      p <- predict(rf, data = as.data.frame(Xte))$predictions
-    } else if (model_type == "xgb") {
-      dtrain <- xgb.DMatrix(data = Xtr, label = ytr)
-      watch <- list(train = dtrain)
-      bst <- xgb.train(params = list(objective = "reg:squarederror",
-                                     max_depth = params$max.depth %||% 6,
-                                     eta = params$eta %||% 0.05,
-                                     subsample = params$subsample %||% 0.8,
-                                     colsample_bytree = params$colsample_bytree %||% 0.8),
-                       data = dtrain, nrounds = params$nrounds %||% 300, verbose = 0)
-      p <- predict(bst, xgb.DMatrix(Xte))
-    }
-    preds[test_idx] <- p
-    rmses <- c(rmses, sqrt(mean((yte - p)^2)))
-    r2s   <- c(r2s, cor(yte, p)^2)
-  }
-  list(preds = preds, rmse_mean = mean(rmses), rmse_sd = sd(rmses), r2_mean = mean(r2s), r2_sd = sd(r2s))
-}
-```
-
-
-```{r}
-# ---- 8. run RF and XGBoost spatial CV ----
-cat("Running RF spatial CV (this may take a minute)...\n")
-rf_res <- spatial_cv("ranger", params = list(num.trees = 300, max.depth = 12))
-cat(sprintf("RF RMSE = %.3f, R2 = %.3f\n", rf_res$rmse_mean, rf_res$r2_mean))
-```
-
-
-```{r}
-cat("Running XGBoost spatial CV...\n")
-xgb_res <- spatial_cv("xgb", params = list(nrounds = 300, max.depth = 6, eta = 0.05))
-cat(sprintf("XGB RMSE = %.3f, R2 = %.3f\n", xgb_res$rmse_mean, xgb_res$r2_mean))
-```
-
-
-```{r}
-# ---- 9. fit final RF on full dataset and compute permutation importance ----
-df_full <- data.frame(y = y, X)
-final_rf <- ranger::ranger(y ~ ., data = df_full, num.trees = 500, max.depth = 12, importance = "permutation")
-imp <- importance(final_rf)
-imp_df <- data.frame(feature = names(imp), importance = imp) %>% arrange(desc(importance))
-write.csv(imp_df, "feature_importance_cleaned.csv", row.names = FALSE)
-```
-
-
-```{r}
-# ---- 10. plots: observed vs predicted (RF spatial CV) ----
-obs <- y; pred_rf <- rf_res$preds
-png("obs_vs_pred_rf_cleaned.png", width = 700, height = 700)
-plot(obs, pred_rf, pch=20, xlab="Observed SOC_MgHa", ylab="Predicted (RF, spatial CV)")
-abline(0,1, col="red", lty=2)
-dev.off()
-cat("Saved plots and feature importance to working directory.\n")
 
 ```
 
