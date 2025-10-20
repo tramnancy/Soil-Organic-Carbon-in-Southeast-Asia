@@ -58,6 +58,7 @@ knitr::knit_hooks$set(
 # Import Library
 
 ```{r}
+
 library(dplyr)
 library(stringr)
 library(readr)
@@ -277,7 +278,7 @@ soc_unit %>%
 ```
 This is so ugly 
 
-# Testing mixed-effect model
+# 1. Testing mixed-effect model
 ```{r}
 # Create another dataset called "soc_main", factoring the variables needed
 soc_main <- soc_unit %>%
@@ -295,7 +296,7 @@ soc_main <- soc_unit %>%
   )
 
 # log_SOC_MgHa measured by descriptors + site 
-mod_lmm1 <- lmer(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + labmethod + secondary_descriptor +
+mod_lmm1 <- lmer(log_SOC_gKg ~ depth_class + temp_s + precip_s + labmethod + secondary_descriptor +
                   (1 | id), data = soc_main, REML = FALSE)
 
 summary(mod_lmm1)
@@ -308,20 +309,51 @@ qqnorm(resid(mod_lmm1)); qqline(resid(mod_lmm1))
 ```
 
 ```{r}
-
 # check collinearity
 check_collinearity(mod_lmm1)
+```
+SOC (g/kg) declines with depth, temperature, and elevation (though elevation and temperature might be correlated). 
+Fertilization appears to enhance SOC
+Annual cropping likely reduces SOC, though not strongly in this dataset. 
+There is unobserved site-level vairance (random effect on id).
 
-# another mixed model test, controlling experiment year and site id
-mod_lmm2 <- lmer(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + labmethod + secondary_descriptor +
-                  (1 + exp_year | id), data = soc_main, REML = FALSE)
-summary(mod_lmm2) #--> there is no different between year / elevation
+Causal hypothesis based on mixed models effect (random effects on site)
+- Climate --> Land use & management --> SOC: temperature and precipitation influence cropping system and fertilization use, land management and soil depth affect SOC. 
+
+Conceptually, each arrow represent a submodel:
+- temp&precip --> secondary_descriptor
+- depth_class --> SOC
+- secondary_descriptor --> SOC
+
+## 2. Set up SEM
+#Create dummy variable for secondary_descriptors
+```{r}
+library(fastDummies)
+soc_main <- fastDummies::dummy_cols(soc_main, select_columns = "secondary_descriptor")
 ```
 
 ```{r}
-# residuals, qq-plot
-plot(mod_lmm2)    # residuals vs fitted
-qqnorm(resid(mod_lmm2)); qqline(resid(mod_lmm2))
+gkg <- subset(soc_main, !is.na(log_SOC_gKg))
+mgha <-subset(soc_main,!is.na(log_SOC_MgHa))
+```
+
+```{r}
+library(nlme)
+library(piecewiseSEM)
+
+m1 <- lmer(secondary_descriptor_Fertilization ~ temp_s + precip_s + elevation_s + (1|id), data = soc_main)
+
+m2 <- lmer(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization + (1|id), data = soc_main)
+
+sem_model <- psem(m1,m2)
+summary(sem_model)
+```
+```{r}
+library(randomForest)
+rf_model <- randomForest(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
+                         data = soc_main, na.action = na.omit)
+importance(rf_model)
+
 ```
 
 # Distribution of published years of articles
