@@ -148,6 +148,9 @@ soc_data_climate <- soc_data_climate %>%
 barplot(table(soc_data_climate$depth_class))
 ```
 The observation mostly still falls under 0-30cm depth. 
+```{r}
+table(gkg$depth_class)
+```
 
 # Elevation 
 Data is extracted from Raster files from https://bigdata.cgiar.org/srtm-90m-digital-elevation-database/ 
@@ -341,21 +344,103 @@ mgha <-subset(soc_main,!is.na(log_SOC_MgHa))
 library(nlme)
 library(piecewiseSEM)
 
-m1 <- lmer(secondary_descriptor_Fertilization ~ temp_s + precip_s + elevation_s + (1|id), data = soc_main)
+m1 <- lmer(secondary_descriptor_Fertilization ~ temp_s + precip_s + elevation_s + (1|id), data = gkg)
 
-m2 <- lmer(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization + (1|id), data = soc_main)
+m2 <- lmer(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization + (1|id), data = gkg)
 
 sem_model <- psem(m1,m2)
 summary(sem_model)
 ```
+
+Fisher's C test: p=0.256 --> non-significant
+- This means the model fits the data well - the hypothesized causal structure (climate --> fertilization --> SOC) is consistent with the observed data. In SEM terms: there are no "missing" relationships that the model failed to capture.
+
+Conceptually this model confirms that climate and elevation influence fertilization behavior, which in turn influences SOC. The over systems fits the observed data (p>0.05).
+
+```{r}
+nrow(gkg)
+car::vif(lm(temp_s ~ elevation_s + precip_s, data = gkg))
+length(unique(gkg$id))
+```
+
+## Move on from SEM to Random Forest
 ```{r}
 library(randomForest)
-rf_model <- randomForest(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
-                         data = soc_main, na.action = na.omit)
-importance(rf_model)
+
+rf_model <- randomForest(
+  log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
+  data = gkg,
+  na.action = na.omit,
+  importance = TRUE,
+  ntree = 500
+)
+
+# Use explicit namespace call
+randomForest::importance(rf_model)
+randomForest::varImpPlot(rf_model)
+
+```
+#Visualization of variable importance
+```{r}
+importance_df <- as.data.frame(randomForest::importance(rf_model))
+importance_df$Variable <- rownames(importance_df)
+
+library(ggplot2)
+ggplot(importance_df, aes(x = reorder(Variable, `%IncMSE`), y = `%IncMSE`)) +
+  geom_col(fill = "#2E8B57") +
+  coord_flip() +
+  labs(
+    title = "Variable Importance in Predicting SOC (g/kg)",
+    x = "Predictor",
+    y = "Increase in MSE (%) if Variable is Permuted"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+# Partial Dependence Plots
+
+```{r}
+library(pdp)
+pdp_elev <- partial(rf_model, pred.var = "elev.s", plot = TRUE, main = "Effect of Elevation on SOC")
+pdp_elev
+pdp_temp <- partial(rf_model, pred.var = "temp_s", plot = TRUE, main = "Effect of Temperature on SOC")
+pdp_temp
 
 ```
 
+# Example of a decision tree visualization
+```{r}
+
+library(rpart)
+library(rpart.plot)
+
+# Example: your random forest model
+rf_model <- randomForest(
+  log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
+  data = gkg,
+  na.action = na.omit,
+  importance = TRUE,
+  ntree = 500
+)
+
+# Extract ONE tree (e.g., the 10th tree) from the forest
+tree10 <- getTree(rf_model, k = 10, labelVar = TRUE)
+
+# Convert it to rpart object for plotting
+# First, create a small training subset to match structure
+fit_rpart <- rpart(
+  log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
+  data = gkg,
+  method = "anova"
+)
+
+# Visualize decision structure
+rpart.plot(fit_rpart, type = 2, extra = 101, fallen.leaves = TRUE,
+           main = "Example Decision Tree for Predicting SOC (g/kg)")
+
+```
+
+## EDA Code
 # Distribution of published years of articles
 ```{r}
 barplot(table(soc_data_climate$year))
