@@ -264,22 +264,37 @@ summary(soc_unit$log_SOC_gKg)
 ```
 
 # Secondary descriptor overtime
+
+This is so ugly 
 ```{r}
-soc_unit %>%
-  group_by(secondary_descriptor, year) %>%
-  summarise(mean_SOC = mean(SOC_gKg, na.rm = TRUE)) %>%
+soc_main$year<-as.numeric(soc_main$year)
+soc_main %>%
+  group_by(country, year) %>%
+  summarise(mean_SOC = mean(log_SOC_gKg, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  filter(!country %in% c("East Timor", "Myanmar")) %>% 
   ggplot(aes(x = year, y = mean_SOC)) +
-  geom_line() + geom_point()+
-  facet_wrap(~secondary_descriptor, scales = "free_y") +
+  geom_line() + 
+  # geom_point() +
+  facet_wrap(~country) +
   labs(
-    title = "SOC concentration over time by land use, intervention, and agroforestry practices",
+    title = "SOC Concentration Over Time by Country",
     x = "Year",
-    y = "Average SOC (Mg/Ha)"
+    y = "Average ln(SOC) (g/kg)"
   ) +
-  theme_light()
+  theme_light() +
+  theme(
+    plot.title = element_text(face = "bold", size = 20),
+    axis.title = element_text(face = "bold", size = 14),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    # legend.position = "none",
+    strip.text = element_text(face = "bold", size = 12)
+  ) +
+  scale_y_continuous(limits = c(0, 7), breaks = seq(0, 7, 2))
+
 
 ```
-This is so ugly 
 
 # 1. Testing mixed-effect model
 ```{r}
@@ -303,6 +318,39 @@ mod_lmm1 <- lmer(log_SOC_gKg ~ depth_class + temp_s + precip_s + labmethod + sec
                   (1 | id), data = soc_main, REML = FALSE)
 
 summary(mod_lmm1)
+```
+
+# making it as a summary table format
+```{r}
+mod_lmm1 <- lmer(log_SOC_gKg ~ depth_class + temp_s + precip_s + labmethod + secondary_descriptor +
+                  (1 | id), data = soc_main, REML = FALSE)
+install.packages("modelsummary")
+library(modelsummary)
+#Name the model
+regz <- list(`SOC (g/kg)` = mod_lmm1)
+
+#Change the variable name
+coefz <- c(
+  "(Intercept)" = "Constant",
+  "depth_class30-60" = "Depth level 30-60cm",
+  "depth_class60+" = "Depth level 60+cm",
+  "temp_s" = "A.A. Temperature",
+  "secondary_descriptorFertilization" = "Fertilization",
+  "labmethodLoss on ignition" = "Lab method - Loss on ignition"
+  )
+
+#Select the statistic to show in the table 
+gofz <- c("nobs", "r.squared", "adj.r.squared")
+
+model_summary <- modelsummary(
+  regz,
+  estimate = c("{estimate}{stars}"),
+  gof_map = gofz,
+  coef_map = coefz,
+  title = "Effect of depth, climate, land management on SOC (g/kg)"
+  )
+
+model_summary
 ```
 
 ```{r}
@@ -329,15 +377,28 @@ Conceptually, each arrow represent a submodel:
 - secondary_descriptor --> SOC
 
 ## 2. Set up SEM
-#Create dummy variable for secondary_descriptors
+#Create dummy variable for secondary_descriptors --> this needs to be done differently beacause of so many different categories in this. 
 ```{r}
-library(fastDummies)
-soc_main <- fastDummies::dummy_cols(soc_main, select_columns = "secondary_descriptor")
+
+fert_data <- soc_main %>%
+  dplyr::filter(grepl("Fertilization", secondary_descriptor, ignore.case = TRUE))
+
+fert_data <- fert_data %>%
+  dplyr::mutate(
+    secondary_descriptor_Fertilization = ifelse(
+      grepl("without", additional_descriptor, ignore.case = TRUE), 0,
+      ifelse(grepl("with|fertilizer|mg|kg|N|application", additional_descriptor, ignore.case = TRUE), 1, NA)
+    )
+  )
+
+table(fert_data$secondary_descriptor_Fertilization)
+
 ```
 
 ```{r}
-gkg <- subset(soc_main, !is.na(log_SOC_gKg))
-mgha <-subset(soc_main,!is.na(log_SOC_MgHa))
+gkg <- subset(fert_data, !is.na(log_SOC_gKg))
+mgha <-subset(fert_data,!is.na(log_SOC_MgHa))
+table(gkg$secondary_descriptor_Fertilization)
 ```
 
 ```{r}
@@ -348,9 +409,13 @@ m1 <- lmer(secondary_descriptor_Fertilization ~ temp_s + precip_s + elevation_s 
 
 m2 <- lmer(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization + (1|id), data = gkg)
 
+#m3 <- lmer(log_SOC_gKg ~ secondary_descriptor_Fertilization + lab_method + depth_class + (1|id), data = gkg )
+
 sem_model <- psem(m1,m2)
 summary(sem_model)
+
 ```
+
 
 Fisher's C test: p=0.256 --> non-significant
 - This means the model fits the data well - the hypothesized causal structure (climate --> fertilization --> SOC) is consistent with the observed data. In SEM terms: there are no "missing" relationships that the model failed to capture.
@@ -358,9 +423,18 @@ Fisher's C test: p=0.256 --> non-significant
 Conceptually this model confirms that climate and elevation influence fertilization behavior, which in turn influences SOC. The over systems fits the observed data (p>0.05).
 
 ```{r}
-nrow(gkg)
+table(gkg$depth_class)
 car::vif(lm(temp_s ~ elevation_s + precip_s, data = gkg))
 length(unique(gkg$id))
+gkg$log_SOC_gkg <-as.numeric(gkg$log_SOC_gKg)
+hist(gkg$log_SOC_gkg, main="Distribution of SOC (g/kg)", col="skyblue", breaks=50)
+#barplot(table(gkg$log_SOC_gkg), main="Distribution of depth (cm)",col="skyblue")
+
+gkg %>% 
+  ggplot(aes(log_SOC_gKg)) +
+  geom_histogram() +
+  theme_light()
+
 ```
 
 ## Move on from SEM to Random Forest
