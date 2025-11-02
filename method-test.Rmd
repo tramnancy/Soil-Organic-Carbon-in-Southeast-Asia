@@ -58,7 +58,6 @@ knitr::knit_hooks$set(
 # Import Library
 
 ```{r}
-
 library(dplyr)
 library(stringr)
 library(readr)
@@ -118,6 +117,7 @@ soc_data_climate <- cbind(soc_data, vals)
 After the above code chunk, the annual average temperature and annual average 
 
 # Checking depth varation of the dataset
+
 ```{r}
 barplot(table(soc_data_climate$depth))
 ```
@@ -126,6 +126,8 @@ From the depth variation, we classify depth into 3 categories:
 - Depth 30-60cm
 - Depth 60+ cm
 First, using the package 'stringr', we split the depth into lower and upper bound by taking the sum of the first measure and the last measure of the depth class, divided by 2, then classify them into 3 categories. 
+
+# Divide depth into 3 class categories
 
 ```{r}
 library(dplyr)
@@ -148,41 +150,55 @@ soc_data_climate <- soc_data_climate %>%
 barplot(table(soc_data_climate$depth_class))
 ```
 The observation mostly still falls under 0-30cm depth. 
-```{r}
-table(gkg$depth_class)
-```
 
+```{r}
+#ggplot(gkg, aes(x = depth_class, y = log_SOC_gKg)) +
+  #geom_boxplot() + theme_minimal() + labs(y="log(SOC g/kg)", x="Depth class")
+#sapply(gkg, function(x) sum(is.na(x))) #10 missing values in depth class
+```
+# ANOVA check for log_gkg distribution per SOC distribution
+```{r}
+#by(gkg$log_SOC_gKg, gkg$depth_class, shapiro.test)
+```
+All 3 depth levels (0-30, 30-60, 60+) have p <0.001, meaning residuals are not normally distributed. Non-normality likely due to skew in SOC data --> log transformation helps, but large sample sizes make even mild deviations significant. 
+
+```{r}
+# ANOVA (one-way)
+aov1 <- aov(log_SOC_gKg ~ depth_class, data = gkg)
+summary(aov1)
+```
+F(2, 2696) = 239.5 (with p<0.001) so depth as a strong effect on SOC & there are significant differences in mean SOC (log scale) across depth classes. This means that SOC concentrations differ significantly among 3 depths. shallower soils have higher SOC. 
 # Elevation 
 Data is extracted from Raster files from https://bigdata.cgiar.org/srtm-90m-digital-elevation-database/ 
 
 ```{r}
 # the srtm files are downloaded from CSI CGAR (90m)
-dem1<-rast("../srtm1.tif")
-dem2<-rast("../srtm2.tif")
-dem3<-rast("../srtm3.tif")
-points<-data.frame(id=soc_data_climate$id,x=soc_data_climate$lon,y=soc_data_climate$lat)
+#dem1<-rast("../srtm1.tif")
+#dem2<-rast("../srtm2.tif")
+#dem3<-rast("../srtm3.tif")
+#points<-data.frame(id=soc_data_climate$id,x=soc_data_climate$lon,y=soc_data_climate$lat)
 
-pts_vec<-vect(points,geom=c("x","y"),crs="EPSG:4326")
+#pts_vec<-vect(points,geom=c("x","y"),crs="EPSG:4326")
 
-e1 <- terra::extract(dem1, pts_vec)[,2]
-e2 <- terra::extract(dem2, pts_vec)[,2]
-e3 <- terra::extract(dem3, pts_vec)[,2]
+#e1 <- terra::extract(dem1, pts_vec)[,2]
+#e2 <- terra::extract(dem2, pts_vec)[,2]
+#e3 <- terra::extract(dem3, pts_vec)[,2]
 
 # combine dem 1, 2, 3 into the elevation column
-soc_data_climate$elev <- dplyr::coalesce(e1, e2, e3)
+#soc_data_climate$elev <- dplyr::coalesce(e1, e2, e3)
 
 # add combine the two elevation column
-soc_data_climate$average.elevation<-as.numeric(soc_data_climate$average.elevation)
-soc_data_climate$elev <- coalesce(soc_data_climate$elev,
-                                  soc_data_climate$average.elevation)
+#soc_data_climate$average.elevation<-as.numeric(soc_data_climate$average.elevation)
+#soc_data_climate$elev <- coalesce(soc_data_climate$elev,
+                            #      soc_data_climate$average.elevation)
 ```
 
 # Checking distribution of numeric continuous variables: precipitation, temperature, and elevation
 ```{r}
 library(tidyr)
 plot_data <- soc_data_climate %>%
-  select(elev, bio1_temp, bio12_precip) %>%
-  pivot_longer(cols = c(elev, bio1_temp, bio12_precip),
+  select(bio1_temp, bio12_precip) %>%
+  pivot_longer(cols = c(bio1_temp, bio12_precip),
                names_to = "variable", values_to = "value")
 # Facet Wrap them
 ggplot(plot_data, aes(x = value)) +
@@ -267,6 +283,18 @@ summary(soc_unit$log_SOC_gKg)
 
 This is so ugly 
 ```{r}
+soc_main <- soc_unit %>%
+  mutate(
+    depth_class = factor(depth_class, ordered = FALSE),
+    main_descriptor = factor(main_descriptor),
+    secondary_descriptor=factor(secondary_descriptor),
+    additional_descriptor=factor(additional_descriptor),
+    labmethod = factor(labmethod),
+    crop=factor(crop),
+    # scale continuous predictors for easier interpretation
+    temp_s = scale(bio1_temp),
+    precip_s = scale(bio12_precip)
+  )
 soc_main$year<-as.numeric(soc_main$year)
 soc_main %>%
   group_by(country, year) %>%
@@ -274,8 +302,7 @@ soc_main %>%
   ungroup() %>% 
   filter(!country %in% c("East Timor", "Myanmar")) %>% 
   ggplot(aes(x = year, y = mean_SOC)) +
-  geom_line() + 
-  # geom_point() +
+  geom_line() + geom_smooth(linetype=0)+
   facet_wrap(~country) +
   labs(
     title = "SOC Concentration Over Time by Country",
@@ -297,46 +324,47 @@ soc_main %>%
 ```
 
 # 1. Testing mixed-effect model
+
 ```{r}
-# Create another dataset called "soc_main", factoring the variables needed
-soc_main <- soc_unit %>%
-  mutate(
-    depth_class = factor(depth_class, ordered = FALSE),
-    main_descriptor = factor(main_descriptor),
-    secondary_descriptor=factor(secondary_descriptor),
-    additional_descriptor=factor(additional_descriptor),
-    labmethod = factor(labmethod),
-    crop=factor(crop),
-    # scale continuous predictors for easier interpretation
-    elevation_s = scale(elev),
-    temp_s = scale(bio1_temp),
-    precip_s = scale(bio12_precip)
-  )
-
-# log_SOC_MgHa measured by descriptors + site 
-mod_lmm1 <- lmer(log_SOC_gKg ~ depth_class + temp_s + precip_s + labmethod + secondary_descriptor +
-                  (1 | id), data = soc_main, REML = FALSE)
-
-summary(mod_lmm1)
+mA <- lmer(log_SOC_gKg ~  depth_class + secondary_descriptor  + temp_s + precip_s + (1 | country)+(1|year),
+  data = soc_main,
+  na.action = na.omit,
+  REML = FALSE
+)
+summary(mA)
 ```
 
-# making it as a summary table format
+- Soil depth has the strongest negative effect on SOC concentration: SOC decreases significantly with depth 30–60 cm: –0.94 log units, 60+ cm: –1.44 log units (p < 0.001). → Indicates topsoil holds most carbon storage.
+
+- Land management descriptors varied in impact: Tillage (–0.54, p < 0.001) and Other managements (–1.18, p < 0.001) significantly reduced SOC. Annual cropping systems also slightly decreased SOC (–0.20, p = 0.04). Perennial systems retained more SOC than annual ones (p = 0.002). Fertilization and organic management alone showed no significant effect, implying management context matters more than single interventions.
+
+- Climatic drivers: Precipitation was strongly positive (+0.56, p < 0.001) → wetter regions promote carbon accumulation. Temperature had no significant linear effect (p = 0.24), possibly masked by co-variation with precipitation or elevation.
+
+-Random country effects (SD = 0.43) indicate moderate variability between national-level contexts (e.g., soil types, measurement methods).
+
+# 1.1 making it as a summary table format
 ```{r}
-mod_lmm1 <- lmer(log_SOC_gKg ~ depth_class + temp_s + precip_s + labmethod + secondary_descriptor +
-                  (1 | id), data = soc_main, REML = FALSE)
-install.packages("modelsummary")
+mA <- lmer(log_SOC_gKg ~  depth_class + secondary_descriptor  + temp_s + precip_s + (1 | country) +(1|year),
+  data = soc_main,
+  na.action = na.omit,
+  REML = FALSE
+)
+
 library(modelsummary)
 #Name the model
-regz <- list(`SOC (g/kg)` = mod_lmm1)
+regz <- list(`SOC (g/kg)` = mA)
 
 #Change the variable name
 coefz <- c(
   "(Intercept)" = "Constant",
   "depth_class30-60" = "Depth level 30-60cm",
   "depth_class60+" = "Depth level 60+cm",
-  "temp_s" = "A.A. Temperature",
-  "secondary_descriptorFertilization" = "Fertilization",
-  "labmethodLoss on ignition" = "Lab method - Loss on ignition"
+  "precip_s" = "A.A. Precipitation",
+  "secondary_descriptorAnnual" ="Annual",
+  "secondary_descriptorPerennial"="Perennial",
+  "secondary_descriptorTillage"="Tillage",
+  "temp_s"="A.A. Temprature",
+  "secondary_descriptorOthers"="Others"
   )
 
 #Select the statistic to show in the table 
@@ -355,15 +383,15 @@ model_summary
 
 ```{r}
 # residuals, qq-plot
-plot(mod_lmm1)    # residuals vs fitted
-qqnorm(resid(mod_lmm1)); qqline(resid(mod_lmm1))
+plot(mA)    # residuals vs fitted
+qqnorm(resid(mA)); qqline(resid(mA))
 ```
 
 ```{r}
 # check collinearity
-check_collinearity(mod_lmm1)
+check_collinearity(mA)
 ```
-SOC (g/kg) declines with depth, temperature, and elevation (though elevation and temperature might be correlated). 
+SOC (g/kg) declines with depth, temperature. 
 Fertilization appears to enhance SOC
 Annual cropping likely reduces SOC, though not strongly in this dataset. 
 There is unobserved site-level vairance (random effect on id).
@@ -378,6 +406,21 @@ Conceptually, each arrow represent a submodel:
 
 ## 2. Set up SEM
 #Create dummy variable for secondary_descriptors --> this needs to be done differently beacause of so many different categories in this. 
+```{r}
+library(lme4)
+library(piecewiseSEM)
+soc_main$secondary_num <- as.numeric(as.factor(soc_main$secondary_descriptor))
+
+m1 <- lmer(secondary_num ~ temp_s + precip_s + (1 | country) + (1 | year), data = soc_main)
+
+m2 <- lmer(log_SOC_gKg ~ depth_class + temp_s + precip_s + secondary_num + 
+             (1 | country) + (1 | year), data = soc_main)
+sem_model <- psem(m1, m2)
+
+# Summary
+summary(sem_model)
+```
+
 ```{r}
 
 fert_data <- soc_main %>%
@@ -441,76 +484,113 @@ gkg %>%
 ```{r}
 library(randomForest)
 
+soc_main$secondary_descriptor <- as.factor(soc_main$secondary_descriptor)
+gkg <- subset(soc_main, !is.na(log_SOC_gKg))
+gkg <- gkg %>%
+  dplyr::filter(!is.na(depth_class),
+                !is.na(secondary_descriptor),
+                !is.na(temp_s),
+                !is.na(precip_s),
+                !is.na(log_SOC_gKg))
+
+# Random forest model
 rf_model <- randomForest(
-  log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
+  log_SOC_gKg ~ depth_class + secondary_descriptor + temp_s + precip_s,
   data = gkg,
   na.action = na.omit,
   importance = TRUE,
   ntree = 500
 )
 
-# Use explicit namespace call
+# View importance
 randomForest::importance(rf_model)
 randomForest::varImpPlot(rf_model)
 
 ```
-#Visualization of variable importance
-```{r}
-importance_df <- as.data.frame(randomForest::importance(rf_model))
-importance_df$Variable <- rownames(importance_df)
 
-library(ggplot2)
-ggplot(importance_df, aes(x = reorder(Variable, `%IncMSE`), y = `%IncMSE`)) +
-  geom_col(fill = "#2E8B57") +
-  coord_flip() +
-  labs(
-    title = "Variable Importance in Predicting SOC (g/kg)",
-    x = "Predictor",
-    y = "Increase in MSE (%) if Variable is Permuted"
-  ) +
-  theme_minimal(base_size = 14)
+```{r}
+#rf_model <- randomForest(
+#  log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
+#  data = gkg,
+ # na.action = na.omit,
+  #importance = TRUE,
+  #ntree = 500
+#)
+
+# Use explicit namespace call
+#randomForest::importance(rf_model)
+#randomForest::varImpPlot(rf_model)
 ```
 
-# Partial Dependence Plots
+
+# Random Forest evaluation
+```{r}
+# R²
+rf_r2 <- 1 - (rf_model$mse[rf_model$ntree] / var(gkg$log_SOC_gKg, na.rm = TRUE))
+print(paste("Random Forest R²:", round(rf_r2, 3)))
+```
+
+79% the variation in Soil Organic Carbon (SOC) is explained by this random forest model
 
 ```{r}
-library(pdp)
-pdp_elev <- partial(rf_model, pred.var = "elev.s", plot = TRUE, main = "Effect of Elevation on SOC")
-pdp_elev
-pdp_temp <- partial(rf_model, pred.var = "temp_s", plot = TRUE, main = "Effect of Temperature on SOC")
-pdp_temp
+# RMSE
+rf_rmse <- sqrt(rf_model$mse[rf_model$ntree])
+print(paste("Random Forest RMSE:", round(rf_rmse, 3)))
+# this is so bad
+```
+```{r}
+# Predicted vs observed
+pred <- predict(rf_model, newdata = gkg)
+obs <- gkg$log_SOC_gKg
+
+plot(obs, pred,
+     xlab = "Observed log(SOC g/kg)",
+     ylab = "Predicted log(SOC g/kg)",
+     main = "Random Forest Model Fit for Soil Organic Carbon",
+     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4))
+abline(0, 1, col = "red", lwd = 2)
+
+```
+```{r}
+library(ggplot2)
+
+importance_df <- data.frame(
+  Variable = rownames(randomForest::importance(rf_model)),
+  Importance = randomForest::importance(rf_model)[, 1]
+)
+
+ggplot(importance_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "#2E8B57") +
+  coord_flip() +
+  labs(x = "Variable", y = "% Increase in MSE",
+       title = "Variable Importance in SOC Prediction (Random Forest)") +
+  theme_minimal(base_size = 13)
 
 ```
 
 # Example of a decision tree visualization
 ```{r}
-
 library(rpart)
 library(rpart.plot)
 
-# Example: your random forest model
+# Example
 rf_model <- randomForest(
-  log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
+  log_SOC_gKg ~ depth_class + secondary_descriptor + temp_s + precip_s,
   data = gkg,
   na.action = na.omit,
   importance = TRUE,
   ntree = 500
 )
 
-# Extract ONE tree (e.g., the 10th tree) from the forest
-tree10 <- getTree(rf_model, k = 10, labelVar = TRUE)
-
-# Convert it to rpart object for plotting
-# First, create a small training subset to match structure
 fit_rpart <- rpart(
-  log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
+  log_SOC_gKg ~ depth_class + secondary_descriptor + temp_s + precip_s,
   data = gkg,
   method = "anova"
 )
 
 # Visualize decision structure
 rpart.plot(fit_rpart, type = 2, extra = 101, fallen.leaves = TRUE,
-           main = "Example Decision Tree for Predicting SOC (g/kg)")
+           main = "Decision Tree for Predicting SOC (g/kg)")
 
 ```
 
