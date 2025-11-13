@@ -404,6 +404,43 @@ Conceptually, each arrow represent a submodel:
 - depth_class --> SOC
 - secondary_descriptor --> SOC
 
+# 1.1 By Depth
+```{r}
+# Split by depth
+depth_data <-split(soc_main,soc_main$depth_class)
+depth_data[1]
+# depth 0-30 = 3107
+# depth 30-60 = 565
+# depth 60+ = 647
+```
+
+# 1.1.2 Depth 
+```{r}
+depth1 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |country)+(1|year),
+  data = depth_data[[1]],
+  na.action = na.omit,
+  REML = FALSE
+)
+summary(depth1)
+```
+
+```{r}
+depth2 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |country)+(1|year),
+  data = depth_data[[2]],
+  na.action = na.omit,
+  REML = FALSE
+)
+summary(depth2)
+```
+```{r}
+depth3 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |country)+(1|year),
+  data = depth_data[[3]],
+  na.action = na.omit,
+  REML = FALSE
+)
+summary(depth3)
+```
+
 ## 2. Set up SEM
 #Create dummy variable for secondary_descriptors --> this needs to be done differently beacause of so many different categories in this. 
 ```{r}
@@ -538,6 +575,7 @@ rf_rmse <- sqrt(rf_model$mse[rf_model$ntree])
 print(paste("Random Forest RMSE:", round(rf_rmse, 3)))
 # this is so bad
 ```
+
 ```{r}
 # Predicted vs observed
 pred <- predict(rf_model, newdata = gkg)
