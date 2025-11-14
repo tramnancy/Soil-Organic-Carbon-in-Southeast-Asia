@@ -422,6 +422,10 @@ depth1 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |co
   REML = FALSE
 )
 summary(depth1)
+library(MuMIn)
+r.squaredGLMM(depth1)
+confint(depth1, method = "Wald")
+summary(predict(depth1, re.form = NULL, se.fit = TRUE))
 ```
 
 ```{r}
@@ -431,6 +435,9 @@ depth2 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |co
   REML = FALSE
 )
 summary(depth2)
+r.squaredGLMM(depth2)
+confint(depth2, method = "Wald")
+confint(depth2, method = "profile")
 ```
 ```{r}
 depth3 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |country)+(1|year),
@@ -439,6 +446,71 @@ depth3 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |co
   REML = FALSE
 )
 summary(depth3)
+r.squaredGLMM(depth3)
+confint(depth3, method = "Wald")
+confint(depth3, method = "profile")
+```
+
+# Create a dataset that combines depth-level linear mixed model values for better visuals
+```{r}
+library(tidyverse)
+lmm_data <- tribble(
+  ~Name, ~Predicted_val, ~Slope, ~LCI, ~UCI, ~Significant,
+  "0-30 Annual", 3.23672, -0.44, -0.67, -0.21, "Yes",
+  "30-60 Annual", 2.43251, -1.29, -1.85, -0.74, "Yes",
+  "60+ Annual", 1.39467, -0.22, -0.53,  0.08, "No",
+  "0-30 Perennial", 3.20268, -0.48, -0.69, -0.27, "Yes",
+  "30-60 Perennial", 2.898051, -0.83, -1.4, -0.26, "Yes",
+  "60+ Perennial", 1.39223, -0.23, -0.52, 0.06, "No",
+  "0-30 Tillage", 3.18954, -0.49, -0.78, -0.20, "Yes",
+  "30-60 Tillage", 2.05003, -1.68, -2.25, -1.10, "Yes",
+  "60+ Tillage", 2.36755, 0.68, 0.17, 1.18, "Yes",
+  "0-30 Fertilization", 3.30969, -0.37, -0.59, -0.15, "Yes",
+  "30-60 Fertilization", 1.920411, -1.80, -2.36, -1.25, "Yes",
+  "60+ Fertilization", 1.79499, 0.17, -0.18, 0.53, "No",
+  "0-30 Precipitation", 4.17681, 0.49, 0.42, 0.57, "Yes",
+  "30-60 Precipitation", 3.529517, -0.198, -0.44, 0.05, "No",
+  "60+ Precipitation", 1.27835, -0.34, -0.49, -0.20, "Yes",
+  "0-30 Temperature", 3.78635, 0.104, 0.05, 0.15, "Yes",
+  "30-60 Temperature", 3.724062, -0.004, -0.16, 0.15, "No",
+  "60+ Temperature", 1.12889, -0.49, -0.61, -0.37, "Yes"
+)
+
+#Depth seperate
+lmm_data <- lmm_data %>%
+  separate(Name, into = c("Depth", "Practice"), sep = " ", remove = FALSE)
+
+lmm_data$Depth <- factor(lmm_data$Depth, levels = c("0-30", "30-60", "60+"))
+lmm_data$Significant <- factor(lmm_data$Significant, levels = c("Yes", "No"))
+```
+
+# Visualizing
+```{r}
+# Visualizing
+library(ggplot2)
+ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
+  geom_errorbarh(aes(xmin = LCI, xmax = UCI), height = 0.25, size = 0.8) +
+  geom_point(aes(size = Significant)) +
+  scale_size_manual(values = c("Yes" = 4, "No" = 2)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_color_manual(values = c(
+    "0-30" = "#1b9e77",
+    "30-60" = "#d95f02",
+    "60+"  = "#7570b3"
+  )) +
+  labs(
+    x = "Slope Estimate (Effect Size)",
+    y = "",
+    color = "Depth (cm)",
+    size = "Significant?",
+    title = "Effect of Management & Climate on SOC by Depth Class",
+    subtitle = "Points = slope estimate; horizontal lines = 95% CI"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(face = "bold")
+  )
 ```
 
 ## 2. Set up SEM
@@ -516,6 +588,7 @@ gkg %>%
   theme_light()
 
 ```
+
 
 ## Move on from SEM to Random Forest
 ```{r}
