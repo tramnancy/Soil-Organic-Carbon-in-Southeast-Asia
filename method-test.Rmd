@@ -593,7 +593,53 @@ gkg %>%
 ## Move on from SEM to Random Forest
 ```{r}
 library(randomForest)
+```
 
+```{r}
+# Random forest model
+rf_model_d1 <- randomForest(
+  log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s,
+  data = depth_data[[1]],
+  na.action = na.omit,
+  importance = TRUE,
+  ntree = 500
+)
+
+# View importance
+randomForest::importance(rf_model_d1)
+randomForest::varImpPlot(rf_model_d1)
+```
+```{r}
+# Random forest model
+rf_model_d2 <- randomForest(
+  log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s,
+  data = depth_data[[2]],
+  na.action = na.omit,
+  importance = TRUE,
+  ntree = 500
+)
+
+# View importance
+randomForest::importance(rf_model_d2)
+randomForest::varImpPlot(rf_model_d2)
+```
+```{r}
+# Random forest model
+rf_model_d3 <- randomForest(
+  log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s,
+  data = depth_data[[3]],
+  na.action = na.omit,
+  importance = TRUE,
+  ntree = 500
+)
+
+# View importance
+randomForest::importance(rf_model_d3)
+randomForest::varImpPlot(rf_model_d3)
+```
+
+
+```{r}
 soc_main$secondary_descriptor <- as.factor(soc_main$secondary_descriptor)
 gkg <- subset(soc_main, !is.na(log_SOC_gKg))
 gkg <- gkg %>%
@@ -618,35 +664,25 @@ randomForest::varImpPlot(rf_model)
 
 ```
 
-```{r}
-#rf_model <- randomForest(
-#  log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization,
-#  data = gkg,
- # na.action = na.omit,
-  #importance = TRUE,
-  #ntree = 500
-#)
-
-# Use explicit namespace call
-#randomForest::importance(rf_model)
-#randomForest::varImpPlot(rf_model)
-```
-
-
 # Random Forest evaluation
 ```{r}
-# R²
-rf_r2 <- 1 - (rf_model$mse[rf_model$ntree] / var(gkg$log_SOC_gKg, na.rm = TRUE))
-print(paste("Random Forest R²:", round(rf_r2, 3)))
+# R² for depth 1
+rf_r2_d1 <- 1 - (rf_model_d1$mse[rf_model_d1$ntree] / var(depth_data[[1]]$log_SOC_gKg, na.rm = TRUE))
+print(paste("Random Forest R²:", round(rf_r2_d1, 3)))
+# R2 for depth 2
+rf_r2_d2 <- 1 - (rf_model_d2$mse[rf_model_d2$ntree] / var(depth_data[[2]]$log_SOC_gKg, na.rm = TRUE))
+print(paste("Random Forest R²:", round(rf_r2_d2, 3)))
+# R3 for depth 3
+rf_r2_d3 <- 1 - (rf_model_d3$mse[rf_model_d3$ntree] / var(depth_data[[3]]$log_SOC_gKg, na.rm = TRUE))
+print(paste("Random Forest R²:", round(rf_r2_d3, 3)))
 ```
 
 79% the variation in Soil Organic Carbon (SOC) is explained by this random forest model
 
 ```{r}
 # RMSE
-rf_rmse <- sqrt(rf_model$mse[rf_model$ntree])
-print(paste("Random Forest RMSE:", round(rf_rmse, 3)))
-# this is so bad
+rf_rmse_d1 <- sqrt(rf_model_d1$mse[rf_model_d1$ntree])
+print(paste("Random Forest RMSE:", round(rf_rmse_d1, 3)))
 ```
 
 ```{r}
@@ -660,17 +696,55 @@ plot(obs, pred,
      main = "Random Forest Model Fit for Soil Organic Carbon",
      pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4))
 abline(0, 1, col = "red", lwd = 2)
-
 ```
+
+```{r}
+# Predicted vs observed
+pred_d1 <- predict(rf_model_d1, newdata = depth_data[[1]])
+obs_d1 <- depth_data[[1]]$log_SOC_gKg
+
+plot(obs_d1, pred_d1,
+     xlab = "Observed log(SOC g/kg)",
+     ylab = "Predicted log(SOC g/kg)",
+     main = "Random Forest Model Fit for Soil Organic Carbon, depth 0-30cm, 
+     R2 = 0.88",
+     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
+```
+```{r}
+# Predicted vs observed
+pred_d2 <- predict(rf_model_d2, newdata = depth_data[[2]])
+obs_d2 <- depth_data[[2]]$log_SOC_gKg
+
+plot(obs_d2, pred_d2,
+     xlab = "Observed log(SOC g/kg)",
+     ylab = "Predicted log(SOC g/kg)",
+     main = "Random Forest Model Fit for Soil Organic Carbon, depth 30-60cm, 
+     R2=0.75",
+     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
+```
+
+```{r}
+# Predicted vs observed
+pred_d3 <- predict(rf_model_d3, newdata = depth_data[[3]])
+obs_d3 <- depth_data[[3]]$log_SOC_gKg
+
+plot(obs_d3, pred_d3,
+     xlab = "Observed log(SOC g/kg)",
+     ylab = "Predicted log(SOC g/kg)",
+     main = "Random Forest Model Fit for Soil Organic Carbon, depth 60+cm,
+     R=0.784",
+     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
+```
+
 ```{r}
 library(ggplot2)
 
-importance_df <- data.frame(
-  Variable = rownames(randomForest::importance(rf_model)),
-  Importance = randomForest::importance(rf_model)[, 1]
+importance_df_d1 <- data.frame(
+  Variable = rownames(randomForest::importance(rf_model_d)),
+  Importance = randomForest::importance(rf_model_d1)[, 1]
 )
 
-ggplot(importance_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+ggplot(importance_df_d1, aes(x = reorder(Variable, Importance), y = Importance)) +
   geom_col(fill = "#2E8B57") +
   coord_flip() +
   labs(x = "Variable", y = "% Increase in MSE",
