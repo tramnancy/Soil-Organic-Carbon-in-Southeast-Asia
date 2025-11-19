@@ -513,6 +513,7 @@ ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
   )
 ```
 
+
 ## 2. Set up SEM
 #Create dummy variable for secondary_descriptors --> this needs to be done differently beacause of so many different categories in this. 
 ```{r}
