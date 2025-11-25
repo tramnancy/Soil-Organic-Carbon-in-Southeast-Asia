@@ -517,35 +517,85 @@ ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
 ## 2. Set up SEM
 #Create dummy variable for secondary_descriptors --> this needs to be done differently beacause of so many different categories in this. 
 ```{r}
-library(lme4)
-library(piecewiseSEM)
+library(piecewiseSEM) #for SEM
 soc_main$secondary_num <- as.numeric(as.factor(soc_main$secondary_descriptor))
+gkg <- subset(soc_main, !is.na(log_SOC_gKg))
+table(soc_main$secondary_num)
 
-m1 <- lmer(secondary_num ~ temp_s + precip_s + (1 | country) + (1 | year), data = soc_main)
 
-m2 <- lmer(log_SOC_gKg ~ depth_class + temp_s + precip_s + secondary_num + 
-             (1 | country) + (1 | year), data = soc_main)
-sem_model <- psem(m1, m2)
-
-# Summary
-summary(sem_model)
+#we have to bootstrap by hand manually
+#df = 0 is not a problem is not the same at there are no indirect effect, is not the model error. We cannot evaluate the Global Goodness of Fit. 
+#should do boostrap to get indirect relationship between Y and M
+#dash line is not significant
 ```
 
 ```{r}
+library(piecewiseSEM)
+# SEM MODEL FOR DEPTH 0-30
+sem_model <- psem(
+  lm(secondary_num ~ temp_s + precip_s, data = depth_data[[1]]),
+  lm(log_SOC_gKg ~ secondary_num + temp_s + precip_s, data = depth_data[[1]])
+)
 
-fert_data <- soc_main %>%
-  dplyr::filter(grepl("Fertilization", secondary_descriptor, ignore.case = TRUE))
+summary(sem_model)
+plot(sem_model)
+coefs(sem_model)
+```
 
-fert_data <- fert_data %>%
-  dplyr::mutate(
-    secondary_descriptor_Fertilization = ifelse(
-      grepl("without", additional_descriptor, ignore.case = TRUE), 0,
-      ifelse(grepl("with|fertilizer|mg|kg|N|application", additional_descriptor, ignore.case = TRUE), 1, NA)
-    )
-  )
+significant indirect relationship between M and Y (land management practices and SOC)
 
-table(fert_data$secondary_descriptor_Fertilization)
+```{r}
+m1.1 <- lm(secondary_num ~ temp_s + precip_s, data = depth_data[[2]])
+# M~X
+m2.2 <- lm(log_SOC_gKg ~ secondary_num + temp_s +precip_s, data = depth_data[[2]])
+# Y~M+X
 
+sem_model_2 <- psem(m1.1, m2.2)
+
+# Summary
+summary(sem_model_2)
+
+plot(sem_model_2)
+```
+
+```{r}
+m1.3 <- lm(secondary_num ~ temp_s + precip_s, data = depth_data[[3]])
+# M~X
+m2.3 <- lm(log_SOC_gKg ~ secondary_num + temp_s +precip_s, data = depth_data[[3]])
+# Y~M+X
+
+sem_model_3 <- psem(m1.3, m2.3)
+
+# Summary
+summary(sem_model_3)
+
+plot(sem_model_3)
+```
+
+```{r}
+library(lavaan)
+#sem_model <- 
+#m1.1 <- lm(log_SOC_gKg ~ temp_s + precip_s, data=soc_main)
+#m2.2 <-lm(secondary_num ~ temp_s + precip_s, data =soc_main)
+#m3.3 <-lm(log_SOC_gKg ~ secondary_num, data = soc_main)
+#fit_sem <-cfa(model = c(m1.1,m2.2,m3.3), data = soc_main)
+#summary(fit_sem)
+```
+
+```{r}
+#fert_data <- soc_main %>%
+ # dplyr::filter(grepl("Fertilization", secondary_descriptor, ignore.case = TRUE))
+
+#fert_data <- fert_data %>%
+ # dplyr::mutate(
+  #  secondary_descriptor_Fertilization = ifelse(
+   #   grepl("without", additional_descriptor, ignore.case = TRUE), 0,
+    #  ifelse(grepl("with|fertilizer|mg|kg|N|application", additional_descriptor, ignore.case = TRUE), 1, NA)
+    #)
+  #)
+
+#table(fert_data$secondary_descriptor_Fertilization)
+#library(lavaan)
 ```
 
 ```{r}
@@ -762,7 +812,7 @@ library(rpart.plot)
 # Example
 rf_model <- randomForest(
   log_SOC_gKg ~ depth_class + secondary_descriptor + temp_s + precip_s,
-  data = gkg,
+  data = depth_data[[1]],
   na.action = na.omit,
   importance = TRUE,
   ntree = 500
@@ -770,7 +820,7 @@ rf_model <- randomForest(
 
 fit_rpart <- rpart(
   log_SOC_gKg ~ depth_class + secondary_descriptor + temp_s + precip_s,
-  data = gkg,
+  data = depth_data[[1]],
   method = "anova"
 )
 
