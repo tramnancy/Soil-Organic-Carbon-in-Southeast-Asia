@@ -481,6 +481,9 @@ lmm_data <- lmm_data %>%
   separate(Name, into = c("Depth", "Practice"), sep = " ", remove = FALSE)
 
 lmm_data$Depth <- factor(lmm_data$Depth, levels = c("0-30", "30-60", "60+"))
+lmm_data <- lmm_data %>%
+  arrange(Depth, Practice)
+
 lmm_data$Significant <- factor(lmm_data$Significant, levels = c("Yes", "No"))
 ```
 
@@ -488,6 +491,8 @@ lmm_data$Significant <- factor(lmm_data$Significant, levels = c("Yes", "No"))
 ```{r}
 # Visualizing
 library(ggplot2)
+library(ggplot2)
+
 ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
   geom_errorbarh(aes(xmin = LCI, xmax = UCI), height = 0.25, size = 0.8) +
   geom_point(aes(size = Significant)) +
@@ -720,6 +725,7 @@ randomForest::varImpPlot(rf_model)
 # R² for depth 1
 rf_r2_d1 <- 1 - (rf_model_d1$mse[rf_model_d1$ntree] / var(depth_data[[1]]$log_SOC_gKg, na.rm = TRUE))
 print(paste("Random Forest R²:", round(rf_r2_d1, 3)))
+randomForest::importance(rf_model_d1)
 # R2 for depth 2
 rf_r2_d2 <- 1 - (rf_model_d2$mse[rf_model_d2$ntree] / var(depth_data[[2]]$log_SOC_gKg, na.rm = TRUE))
 print(paste("Random Forest R²:", round(rf_r2_d2, 3)))
@@ -762,6 +768,31 @@ plot(obs_d1, pred_d1,
      pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
 ```
 ```{r}
+importance_df_d1 <- data.frame(
+  Variable = rownames(randomForest::importance(rf_model_d1)),
+  Importance = randomForest::importance(rf_model_d1)[, 1])
+summary(importance_df_d1)
+importance_df_d1 <- importance_df_d1 %>%
+  mutate(
+    Variable = recode(
+      Variable,
+      temp_s = "Temperature",
+      precip_s = "Precipitation",
+      secondary_descriptor = "Management factors"))
+
+ggplot(importance_df_d1, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "#1b9e77", width = 0.4) +
+  #scale_x_discrete(expand = expansion(mult = 0.05)) +
+  labs(
+    x = "Variable",
+    y = "% Increase in MSE",
+    title = "Variable Importance in SOC Prediction,\nDepth 0–30 cm (Random Forest)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),aspect.ratio = 1/1)
+
+```
+
+```{r}
 # Predicted vs observed
 pred_d2 <- predict(rf_model_d2, newdata = depth_data[[2]])
 obs_d2 <- depth_data[[2]]$log_SOC_gKg
@@ -772,6 +803,28 @@ plot(obs_d2, pred_d2,
      main = "Random Forest Model Fit for Soil Organic Carbon, depth 30-60cm, 
      R2=0.75",
      pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
+```
+```{r}
+importance_df_d2 <- data.frame(
+  Variable = rownames(randomForest::importance(rf_model_d2)),
+  Importance = randomForest::importance(rf_model_d2)[, 1])
+
+importance_df_d2 <- importance_df_d2 %>%
+  mutate(
+    Variable = recode(
+      Variable,
+      temp_s = "Temperature",
+      precip_s = "Precipitation",
+      secondary_descriptor = "Management factors"))
+
+ggplot(importance_df_d2, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "#d95f02", width = 0.4) +
+  labs(
+    x = "Variable",
+    y = "% Increase in MSE",
+    title = "Variable Importance in SOC Prediction,\nDepth 30–60 cm (Random Forest)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),aspect.ratio = 1/1)
 ```
 
 ```{r}
@@ -785,6 +838,28 @@ plot(obs_d3, pred_d3,
      main = "Random Forest Model Fit for Soil Organic Carbon, depth 60+cm,
      R=0.784",
      pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
+```
+```{r}
+importance_df_d3 <- data.frame(
+  Variable = rownames(randomForest::importance(rf_model_d3)),
+  Importance = randomForest::importance(rf_model_d3)[, 1])
+
+importance_df_d3 <- importance_df_d3 %>%
+  mutate(
+    Variable = recode(
+      Variable,
+      temp_s = "Temperature",
+      precip_s = "Precipitation",
+      secondary_descriptor = "Management factors"))
+
+ggplot(importance_df_d3, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "#7570b3", width = 0.4) +
+  labs(
+    x = "Variable",
+    y = "% Increase in MSE",
+    title = "Variable Importance in SOC Prediction,\nDepth 60+ cm (Random Forest)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),aspect.ratio = 1/1)
 ```
 
 ```{r}
