@@ -2,7 +2,7 @@
 title: "DA research"
 author: "Nancy Tran"
 output: html_document
-date: "2025-07-18"
+date: "2025-07-18 to 2026-"
 institute: "Denison University"
 format: 
   html:
@@ -147,11 +147,7 @@ table(soc_data_climate$depth_class)
 ```
 The observation mostly still falls under 0-30cm depth. 
 
-```{r}
-#ggplot(gkg, aes(x = depth_class, y = log_SOC_gKg)) +
-  #geom_boxplot() + theme_minimal() + labs(y="log(SOC g/kg)", x="Depth class")
-#sapply(gkg, function(x) sum(is.na(x))) #10 missing values in depth class
-```
+
 # ANOVA check for log_gkg distribution per SOC distribution
 ```{r}
 #by(gkg$log_SOC_gKg, gkg$depth_class, shapiro.test)
@@ -165,30 +161,6 @@ aov1 <- aov(log_SOC_gKg ~ depth_class, data = gkg)
 summary(aov1)
 ```
 F(2, 2696) = 239.5 (with p<0.001) so depth has a strong effect on SOC & there are significant differences in mean SOC (log scale) across depth classes. This means that SOC concentrations differ significantly among 3 depths. shallower soils have higher SOC. 
-# Elevation 
-Data is extracted from Raster files from https://bigdata.cgiar.org/srtm-90m-digital-elevation-database/ 
-
-```{r}
-# the srtm files are downloaded from CSI CGAR (90m)
-#dem1<-rast("../srtm1.tif")
-#dem2<-rast("../srtm2.tif")
-#dem3<-rast("../srtm3.tif")
-#points<-data.frame(id=soc_data_climate$id,x=soc_data_climate$lon,y=soc_data_climate$lat)
-
-#pts_vec<-vect(points,geom=c("x","y"),crs="EPSG:4326")
-
-#e1 <- terra::extract(dem1, pts_vec)[,2]
-#e2 <- terra::extract(dem2, pts_vec)[,2]
-#e3 <- terra::extract(dem3, pts_vec)[,2]
-
-# combine dem 1, 2, 3 into the elevation column
-#soc_data_climate$elev <- dplyr::coalesce(e1, e2, e3)
-
-# add combine the two elevation column
-#soc_data_climate$average.elevation<-as.numeric(soc_data_climate$average.elevation)
-#soc_data_climate$elev <- coalesce(soc_data_climate$elev,
-                            #      soc_data_climate$average.elevation)
-```
 
 # Checking distribution of numeric continuous variables: precipitation, temperature
 ```{r}
@@ -274,7 +246,7 @@ summary(soc_unit$log_SOC_MgHa)
 summary(soc_unit$log_SOC_gKg)
 ```
 
-# Secondary descriptor overtime
+# SOC overtime by country (not good graph)
 
 This is so ugly 
 ```{r}
@@ -327,61 +299,21 @@ soc_main %>%
 
 -Random country effects (SD = 0.43) indicate moderate variability between national-level contexts (e.g., soil types, measurement methods).
 
-# 1.1 making it as a summary table format
+# 1A - Filtering Land Use
+```{r}
+soc_landuse <-soc_main %>% filter(main_descriptor=="Land use", !is.na(log_SOC_gKg)) %>% select(
+  id, year, lon, lat, location, country, main_descriptor, secondary_descriptor, temp_s, precip_s, depth_class, log_SOC_gKg)
+#explore
+ggplot(soc_landuse) + aes(x=factor(secondary_descriptor), y=log_SOC_gKg) + facet_wrap(~depth_class)+
+  geom_boxplot()+labs( title="Distribution of SOC by landuse and depth", x="Land use",y="Log SOC")
+```
 
-mA <- lmer(log_SOC_gKg ~  depth_class + secondary_descriptor  + temp_s + precip_s + (1 | country) +(1|year),
-  data = soc_main,
-  na.action = na.omit,
-  REML = FALSE
-)
+```{r}
+landuse <-lm(log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + depth_class, data = soc_landuse)
+summary(landuse)
 
-library(modelsummary)
-#Name the model
-regz <- list(`SOC (g/kg)` = mA)
+```
 
-#Change the variable name
-coefz <- c(
-  "(Intercept)" = "Constant",
-  "depth_class30-60" = "Depth level 30-60cm",
-  "depth_class60+" = "Depth level 60+cm",
-  "precip_s" = "A.A. Precipitation",
-  "secondary_descriptorAnnual" ="Annual",
-  "secondary_descriptorPerennial"="Perennial",
-  "secondary_descriptorTillage"="Tillage",
-  "temp_s"="A.A. Temprature",
-  "secondary_descriptorOthers"="Others"
-  )
-
-#Select the statistic to show in the table 
-gofz <- c("nobs", "r.squared", "adj.r.squared")
-
-model_summary <- modelsummary(
-  regz,
-  estimate = c("{estimate}{stars}"),
-  gof_map = gofz,
-  coef_map = coefz,
-  title = "Effect of depth, climate, land management on SOC (g/kg)"
-  )
-
-#model_summary
-# residuals, qq-plot
-plot(mA)    # residuals vs fitted
-qqnorm(resid(mA)); qqline(resid(mA))
-
-# check collinearity
-check_collinearity(mA)
-SOC (g/kg) declines with depth, temperature. 
-Fertilization appears to enhance SOC
-Annual cropping likely reduces SOC, though not strongly in this dataset. 
-There is unobserved site-level vairance (random effect on id).
-
-Causal hypothesis based on mixed models effect (random effects on site)
-- Climate --> Land use & management --> SOC: temperature and precipitation influence cropping system and fertilization use, land management and soil depth affect SOC. 
-
-Conceptually, each arrow represent a submodel:
-- temp&precip --> secondary_descriptor
-- depth_class --> SOC
-- secondary_descriptor --> SOC
 
 # 1.1 By Depth
 ```{r}
@@ -508,8 +440,8 @@ ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
     y = "",
     color = "Depth (cm)",
     size = "Significant?",
-    title = "Effect of Management & Climate on SOC by Depth Class",
-    subtitle = "Points = slope estimate; horizontal lines = 95% CI"
+    title = "Effect of Management & Climate on SOC\nby Depth Class",
+    subtitle = "Points = Estimate\nHorizontal lines = 95% CI"
   ) +
   theme_minimal(base_size = 14) +
   theme(
@@ -520,7 +452,21 @@ ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
 
 
 ## 2. Set up SEM
-#Create dummy variable for secondary_descriptors --> this needs to be done differently beacause of so many different categories in this. 
+```{r}
+#fert_d0<- depth_3060 %>% filter (secondary_descriptor =="Fertilization")
+#table(depth_60$secondary_descriptor)
+#unique_030 <- depth_60 %>% distinct()
+#depth_030 %>%
+#  summarise(count = sum(grepl("Others", additional_descriptor)))
+
+#depth_60 %>%
+ # filter(secondary_descriptor == "Perennial") %>%
+  #count(additional_descriptor)
+```
+
+
+# Create dummy variable for secondary_descriptors --> this needs to be done differently beacause of so many different categories in this. 
+
 Management intensity is not universally defined across all management systems. Therefore, intensity variables were constructed only for management types where intensity variation is meaningful (e.g., fertilization and tillage), following standard practice in soil management literature.
 
 ## 2.1. Fertilization intensity
@@ -535,20 +481,8 @@ soc_main <- soc_main %>% mutate(
   TRUE~ NA_real_))
 ```
 
-## 2.2. Organic Management intensity
-```{r}
-soc_main <- soc_main %>%
-  mutate(
-    organic_intensity = case_when(
-      secondary_descriptor == "Organic management" &
-        str_detect(additional_descriptor, regex("Non organic", ignore_case = TRUE)) ~ 0,
-      secondary_descriptor == "Organic management" &
-        str_detect(additional_descriptor, regex("Organic", ignore_case = TRUE)) ~ 1,
-      secondary_descriptor == "Organic management" ~ 1, 
-      TRUE ~ NA_real_))
-```
 
-## 2.3. Tillage intensity
+## 2.2. Tillage intensity
 ```{r}
 soc_main <- soc_main %>%
   mutate(
@@ -565,51 +499,6 @@ soc_main <- soc_main %>%
       TRUE ~ NA_real_))
 ```
 
-## 2.4. Perennial intensity
-```{r}
-soc_main <- soc_main %>%
-  mutate(
-    perennial_intensity = case_when(
-      secondary_descriptor == "Perennial" &
-        str_detect(additional_descriptor, regex("Monocrop", ignore_case = TRUE)) ~ 1,
-      secondary_descriptor == "Perennial" &
-        str_detect(additional_descriptor, regex("Rotation", ignore_case = TRUE)) ~ 2,
-      secondary_descriptor == "Perennial" &
-        str_detect(additional_descriptor, regex("Fallow", ignore_case = TRUE)) ~ 3,
-      secondary_descriptor == "Perennial" &
-        str_detect(additional_descriptor, regex("Initial", ignore_case = TRUE)) ~ 4,
-      TRUE ~ NA_real_))
-```
-
-## 2.5. Annual intensity
-```{r}
-soc_main <- soc_main %>%
-  mutate(
-    annual_intensity = case_when(
-      secondary_descriptor == "Annual" &
-        str_detect(additional_descriptor, regex("Monocrop", ignore_case = TRUE)) ~ 1,
-      secondary_descriptor == "Annual" &
-        str_detect(additional_descriptor, regex("Rotation", ignore_case = TRUE)) ~ 2,
-      secondary_descriptor == "Annual" &
-        str_detect(additional_descriptor, regex("Fallow", ignore_case = TRUE)) ~ 3,
-      secondary_descriptor == "Annual" &
-        str_detect(additional_descriptor, regex("Initial", ignore_case = TRUE)) ~ 4,
-      secondary_descriptor == "Annual" &
-        str_detect(additional_descriptor, regex("With intercropping", ignore_case = TRUE)) ~ 5,
-      secondary_descriptor == "Annual" &
-        str_detect(additional_descriptor, regex("Without intercropping", ignore_case = TRUE)) ~ 6,
-      TRUE ~ NA_real_))
-```
-
-## 2.6. Agroforestry
-```{r}
-soc_main <- soc_main %>%
-  mutate(
-    agroforestry = case_when(
-      secondary_descriptor == "Agroforestry" &
-        str_detect(additional_descriptor, regex("Agroforestry", ignore_case = TRUE)) ~ 1,
-      TRUE ~ NA_real_))
-```
 
 # 3. Structural Equation Modeling (SEM)
 ```{r}
@@ -623,19 +512,18 @@ depth_60<-subset(soc_main, soc_main$depth_class=="60+")
 #dash line is not significant
 ```
 
-
-# Depth 0-30, fertilizer intensity
+## Ferilizer intensity by depth
+### Depth 0-30, fertilizer intensity
 ```{r}
 m_fert_030 <- lmer(fert_intensity ~ temp_s + precip_s + (1 | country), data = depth_030)
 m_soc_030_fert <- lmer(log_SOC_gKg ~  fert_intensity + temp_s + precip_s +
                     (1 | country), data = depth_030)
-
 sem_030_fert <- psem(m_fert_030,m_soc_030_fert)
 summary(sem_030_fert)
 plot(sem_030_fert)
 ```
 
-# Depth 30-60, fertilization intensity
+### Depth 30-60, fertilization intensity
 ```{r}
 m_fert_3060 <- lmer(fert_intensity ~ temp_s + precip_s + (1 | country), data = depth_3060)
 m_soc_3060_fert <- lmer(log_SOC_gKg ~  fert_intensity + temp_s + precip_s +
@@ -646,7 +534,8 @@ summary(sem_3060_fert)
 plot(sem_3060_fert)
 ```
 
-# Depth 60+, fertilizer intensity
+
+### Depth 60+, fertilizer intensity
 ```{r}
 m_fert_60 <- lmer(fert_intensity ~ temp_s + precip_s + (1 | country), data = depth_60)
 m_soc_60_fert <- lmer(log_SOC_gKg ~  fert_intensity + temp_s + precip_s +
@@ -657,7 +546,46 @@ summary(sem_60_fert)
 plot(sem_60_fert)
 ```
 
-# Depth 0-30, tillage intensity
+### Land Use at depth 30
+
+```{r}
+
+library(dplyr)
+
+landuse <- soc_main %>%
+  filter(main_descriptor == "Land use",
+         depth_class == "0-30") %>%
+  mutate(
+    country = as.factor(country),
+    land_use = case_when(
+      secondary_descriptor == "Annual" ~ 1,
+      secondary_descriptor == "Perennial" ~ 2,
+      secondary_descriptor == "Agroforestry" ~ 3
+    )
+  ) %>%
+  select(id, country, log_SOC_gKg,
+         land_use, temp_s, precip_s) %>%
+  filter(complete.cases(.))
+
+m_landuse <- lmer(
+  land_use ~ temp_s + precip_s + (1 | country),
+  data = landuse
+)
+m_SOC <- lmer(
+  log_SOC_gKg ~ land_use + temp_s + precip_s + (1 | country),
+  data = landuse
+)
+
+sem_landuse <- psem(
+  m_landuse,
+  m_SOC
+)
+summary(sem_landuse)
+plot(sem_landuse)
+```
+
+
+## Depth 0-30, tillage intensity
 ```{r}
 m_till_030 <- lmer(tillage_intensity ~ temp_s + precip_s + (1 | country), data = depth_030)
 m_soc_030_till <- lmer(log_SOC_gKg ~  tillage_intensity + temp_s + precip_s +
@@ -668,57 +596,111 @@ summary(sem_030_till)
 plot(sem_030_till)
 ```
 
-# Depth 30-60, tillage intensity
 ```{r}
-m_till_3060 <- lmer(tillage_intensity ~ temp_s + precip_s + (1 | country), data = depth_3060)
-m_soc_3060_till <- lmer(log_SOC_gKg ~  tillage_intensity + temp_s + precip_s +
-                    (1 | country), data = depth_3060)
+# tidy + plotting libs
+library(tidyverse)
 
-sem_3060_till <- psem(m_till_3060,m_soc_3060_till)
-summary(sem_3060_till)
-plot(sem_3060_till)
-```
+# ---- REPLACE these vectors with your actual numeric inputs if they differ ----
+# I use the Std.Estimate and P.Value entries you posted.
+# Order: model1 = Fert 0-30, model2 = Fert 30-60, model3 = Fert 60+, model4 = Landuse, model5 = Tillage 0-30
 
+model_names <- c("sem_030_fert", "sem_3060_fert", "sem_60_fert", "sem_landuse", "sem_030_till")
 
-```{r}
-m_till_60 <- lm(tillage_intensity ~ temp_s + precip_s, data = depth_60)
-m_soc_60_till <- lm(log_SOC_gKg ~  tillage_intensity + temp_s + precip_s, data = depth_60)
+# For each model we store the standardized estimates and p-values for:
+# a) temp -> mediator (std_est_tmp_med, p_tmp_med)
+# b) precip -> mediator (std_est_pr_med, p_pr_med)
+# c) mediator -> SOC (std_est_med_soc, p_med_soc)
+# d) temp -> SOC direct (std_est_tmp_soc, p_tmp_soc)
+# e) precip -> SOC direct (std_est_pr_soc, p_pr_soc)
 
-sem_60_till <- psem(m_till_60,m_soc_60_till)
-summary(sem_60_till) #cant run this because no variation
-summary(m_soc_60_till)
-plot(sem_60_till)
-```
-For depth 60+ of tillage, the Error in R said "Error in names(B) <- numVars :
-'names' attribute [2] must be the same length as the vector [0]". In the package piecewiseSEM() this means that there are zero valid indirect effects, the mediator (tillage_intensity) has no usable variation or no statistically estimable path. We can say that
-1. Climate does not determine tillage intensity, especially not at 60+ cm.
-2. At deep soil layers, tillage is a historical surface management signal, not a climate-mediated process. 
+# Fill these with the Std.Estimate and P.Value from your summaries:
+std_est_tmp_med <- c(0.8479, 0.8479, 2.3968, 0.0338, 0.2119)   # temp -> mediator (per model)
+p_tmp_med       <- c(0.0411, 0.0411, 0.1320, 0.2570, 0.4147)
 
-At depths >60 cm, management-mediated pathways could not be estimated due to limited variation and lack of climate–management coupling; therefore, SOC responses were evaluated using direct-effects models only.
+std_est_pr_med  <- c(0.1558, 0.1558, 0.8189, 0.0325, 0.0026)
+p_pr_med        <- c(0.3426, 0.3426, 0.0976, 0.4031, 0.9978)
 
-# Depth 0-30, perennial
-```{r}
-m_perennial_030 <- lmer(perennial_intensity ~ temp_s + precip_s + (1 | country), data = depth_030)
-m_soc_030_perennial <- lmer(log_SOC_gKg ~  perennial_intensity + temp_s + precip_s +
-                    (1 | country), data = depth_030)
+std_est_med_soc <- c(0.2096, 0.2096, 0.1265, -0.0183, -0.0102)
+p_med_soc       <- c(0.0019, 0.0019, 0.0719, 0.5774, 0.7022)
 
-sem_030_perennial <- psem(m_perennial_030,m_soc_030_perennial)
-summary(sem_030_perennial)
-plot(sem_030_perennial)
-```
+std_est_tmp_soc <- c(4.9219, 4.9219, 12.0249, -0.0692, 0.7904)
+p_tmp_soc       <- c(0.0000, 0.0000, 0.0000, 0.0341, 0.0000)
 
-```{r}
-library(piecewiseSEM)
-# SEM MODEL FOR DEPTH 0-30
-sem_model <- psem(
-  lm(secondary_num ~ temp_s + precip_s, data = depth_data[[1]]),
-  lm(log_SOC_gKg ~ secondary_num + temp_s + precip_s, data = depth_data[[1]])
+std_est_pr_soc  <- c(2.0678, 2.0678, 3.5021, 0.2080, 0.2752)
+p_pr_soc        <- c(0.0000, 0.0000, 0.0000, 0.0000, 0.2014)
+
+# Put them into a tibble for further work
+sem_table <- tibble(
+  model = model_names,
+  std_tmp_med = std_est_tmp_med, p_tmp_med = p_tmp_med,
+  std_pr_med = std_est_pr_med,  p_pr_med = p_pr_med,
+  std_med_soc = std_est_med_soc, p_med_soc = p_med_soc,
+  std_tmp_soc = std_est_tmp_soc, p_tmp_soc = p_tmp_soc,
+  std_pr_soc  = std_est_pr_soc,  p_pr_soc = p_pr_soc
 )
 
-summary(sem_model)
-plot(sem_model)
-coefs(sem_model)
+# compute standardized indirect effects (temp -> med -> SOC, precip -> med -> SOC)
+sem_table <- sem_table %>%
+  mutate(
+    ind_tmp = std_tmp_med * std_med_soc,
+    ind_pr  = std_pr_med  * std_med_soc,
+    # conservative significance tagging: only label indirect as significant if both component paths are significant
+    ind_tmp_sig = (p_tmp_med < 0.05 & p_med_soc < 0.05),
+    ind_pr_sig  = (p_pr_med  < 0.05 & p_med_soc < 0.05)
+  )
+
+# pivot longer to plot per effect
+effects_long <- sem_table %>%
+  transmute(model,
+            # direct effects
+            temp_direct = std_tmp_soc, temp_direct_p = p_tmp_soc,
+            precip_direct = std_pr_soc, precip_direct_p = p_pr_soc,
+            # mediator paths
+            med_effect = std_med_soc, med_effect_p = p_med_soc,
+            # indirects
+            temp_indirect = ind_tmp, temp_indirect_sig = ind_tmp_sig,
+            precip_indirect = ind_pr, precip_indirect_sig = ind_pr_sig) %>%
+  pivot_longer(-model, names_to = "effect", values_to = "value", values_drop_na = FALSE) %>%
+  # separate the effect into type and variable for plotting labels
+  mutate(
+    effect_type = case_when(
+      str_detect(effect, "direct") ~ "Direct",
+      str_detect(effect, "indirect") ~ "Indirect",
+      effect == "med_effect" ~ "Mediator",
+      TRUE ~ "Other"
+    ),
+    var = case_when(
+      str_detect(effect, "temp") ~ "temp",
+      str_detect(effect, "precip") ~ "precip",
+      effect == "med_effect" ~ "mediator",
+      TRUE ~ effect
+    )
+  )
+
+# quick view
+# print(sem_table)
+# print(effects_long)
+
+# ---- Plot: grouped forest plot of standardized direct & indirect effects ----
+# We'll plot temp and precip effects side-by-side, and the mediator effect as its own color
+plot_df <- effects_long %>%
+  filter(effect_type %in% c("Direct", "Indirect", "Mediator")) %>%
+  mutate(
+    model = factor(model, levels = model_names),
+    var = factor(var, levels = c("temp", "precip", "mediator"))
+  )
+
+library(ggplot2)
+ggplot(plot_df, aes(x = model, y = value, fill = interaction(var, effect_type))) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_fill_brewer(palette = "Set2", name = "Path (type)") +
+  labs(x = "SEM model", y = "Standardized effect (std. estimate)",
+       title = "Standardized direct, mediator and indirect effects across SEMs") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1))
 ```
+
 
 significant indirect relationship between M and Y (land management practices and SOC)
 
@@ -751,7 +733,7 @@ plot(sem_model_3)
 ```
 
 ```{r}
-library(lavaan)
+
 #sem_model <- 
 #m1.1 <- lm(log_SOC_gKg ~ temp_s + precip_s, data=soc_main)
 #m2.2 <-lm(secondary_num ~ temp_s + precip_s, data =soc_main)
@@ -782,26 +764,9 @@ mgha <-subset(fert_data,!is.na(log_SOC_MgHa))
 table(gkg$secondary_descriptor_Fertilization)
 ```
 
-```{r}
-library(nlme)
-library(piecewiseSEM)
-
-m1 <- lmer(secondary_descriptor_Fertilization ~ temp_s + precip_s + elevation_s + (1|id), data = gkg)
-
-m2 <- lmer(log_SOC_gKg ~ depth_class + elevation_s + temp_s + precip_s + secondary_descriptor_Fertilization + (1|id), data = gkg)
-
-#m3 <- lmer(log_SOC_gKg ~ secondary_descriptor_Fertilization + lab_method + depth_class + (1|id), data = gkg )
-
-sem_model <- psem(m1,m2)
-summary(sem_model)
-
-```
 
 
-Fisher's C test: p=0.256 --> non-significant
-- This means the model fits the data well - the hypothesized causal structure (climate --> fertilization --> SOC) is consistent with the observed data. In SEM terms: there are no "missing" relationships that the model failed to capture.
 
-Conceptually this model confirms that climate and elevation influence fertilization behavior, which in turn influences SOC. The over systems fits the observed data (p>0.05).
 
 ```{r}
 table(gkg$depth_class)
