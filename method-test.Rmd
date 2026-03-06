@@ -114,11 +114,6 @@ soc_data_climate <- cbind(soc_data, vals)
 
 After the above code chunk, the annual average temperature and annual average 
 
-# Checking depth varation of the dataset
-
-```{r}
-barplot(table(soc_data_climate$depth))
-```
 From the depth variation, we classify depth into 3 categories: 
 - Depth 0-30cm
 - Depth 30-60cm
@@ -143,7 +138,6 @@ soc_data_climate <- soc_data_climate %>%
 
 #Checking distribution of depth class
 barplot(table(soc_data_climate$depth_class))
-table(soc_data_climate$depth_class)
 ```
 The observation mostly still falls under 0-30cm depth. 
 
@@ -157,23 +151,43 @@ All 3 depth levels (0-30, 30-60, 60+) have p <0.001, meaning residuals are not n
 ### move this chunk here below (no dataset found here)
 ```{r}
 # ANOVA (one-way)
-aov1 <- aov(log_SOC_gKg ~ depth_class, data = gkg)
-summary(aov1)
+#aov1 <- aov(log_SOC_gKg ~ depth_class, data = gkg)
+#summary(aov1)
 ```
 F(2, 2696) = 239.5 (with p<0.001) so depth has a strong effect on SOC & there are significant differences in mean SOC (log scale) across depth classes. This means that SOC concentrations differ significantly among 3 depths. shallower soils have higher SOC. 
 
 # Checking distribution of numeric continuous variables: precipitation, temperature
 ```{r}
-library(tidyr)
 plot_data <- soc_data_climate %>%
   select(bio1_temp, bio12_precip) %>%
   pivot_longer(cols = c(bio1_temp, bio12_precip),
-               names_to = "variable", values_to = "value")
-# Facet Wrap them
-ggplot(plot_data, aes(x = value)) +
-  geom_histogram(bins = 30) +
+               names_to = "variable",
+               values_to = "value") %>%
+  mutate(variable = recode(variable,
+                           bio1_temp = "Mean Annual Temperature (°C)",
+                           bio12_precip = "Mean Annual Precipitation (mm)"))
+
+ggplot(plot_data, aes(x = value, fill = variable)) +
+  geom_histogram(bins = 30,
+                 color = "white",
+                 alpha = 0.8) +
   facet_wrap(~variable, scales = "free") +
-  theme_minimal()
+  scale_fill_manual(values = c(
+    "Mean Annual Temperature (°C)" = "#E64B35",
+    "Mean Annual Precipitation (mm)" = "#4DBBD5"
+  )) +
+  labs(
+    title = "Distribution of Climate Variables",
+    x = NULL,
+    y = "Frequency"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold", size = 13),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank()
+  )
 ```
 
 At lower elevation with warmer temperatures, chemical weathering processes such as hydro and oxidation tend to be more rapid. This results in deeper soils rich in clay minerals, and secondary oxides --> more microbial activity, organic matter decomposes faster and is incorporated into mineral soil horizons
@@ -248,7 +262,7 @@ summary(soc_unit$log_SOC_gKg)
 
 # SOC overtime by country (not good graph)
 
-This is so ugly 
+## First, create the soc_main dataset
 ```{r}
 soc_main <- soc_unit %>%
   mutate(
@@ -263,6 +277,10 @@ soc_main <- soc_unit %>%
     precip_s = scale(bio12_precip)
   )
 soc_main$year<-as.numeric(soc_main$year)
+```
+
+## Graph the country
+```{r}
 soc_main %>%
   group_by(country, year) %>%
   summarise(mean_SOC = mean(log_SOC_gKg, na.rm = TRUE)) %>%
@@ -286,9 +304,237 @@ soc_main %>%
     strip.text = element_text(face = "bold", size = 12)
   ) +
   scale_y_continuous(limits = c(0, 7), breaks = seq(0, 7, 2))
+```
 
+
+# RANDOM FOREST
+```{r}
+library(randomForest)
+```
+
+## RF depth 0-30
+```{r}
+#sum(complete.cases(depth_030))
+rf_model_d1 <- randomForest(
+  log_SOC_gKg ~ temp_s + precip_s + secondary_descriptor,
+  data = depth_030, 
+  na.action = na.omit,
+  importance = TRUE,
+  ntree = 500)
+
+# View importance
+randomForest::importance(rf_model_d1)
+randomForest::varImpPlot(rf_model_d1)
+```
+
+# RF depth 30-60
+```{r}
+# Random forest model
+rf_model_d2 <- randomForest(
+  log_SOC_gKg ~  temp_s + precip_s +secondary_descriptor,
+  data = depth_3060,
+  na.action = na.omit,
+  importance = TRUE,
+  ntree = 500)
+
+# View importance
+randomForest::importance(rf_model_d2)
+randomForest::varImpPlot(rf_model_d2)
+```
+
+## RF depth 60
+```{r}
+# Random forest model
+rf_model_d3 <- randomForest(
+  log_SOC_gKg ~  temp_s + precip_s + secondary_descriptor,
+  data = depth_60,
+  na.action = na.omit,
+  importance = TRUE,
+  ntree = 500)
+
+# View importance
+randomForest::importance(rf_model_d3)
+randomForest::varImpPlot(rf_model_d3)
+```
+
+## dont run this
+```{r}
+soc_main$secondary_descriptor <- as.factor(soc_main$secondary_descriptor)
+gkg <- subset(soc_main, !is.na(log_SOC_gKg))
+gkg <- gkg %>%
+  dplyr::filter(!is.na(depth_class),
+                !is.na(secondary_descriptor),
+                !is.na(temp_s),
+                !is.na(precip_s),
+                !is.na(log_SOC_gKg))
+
+# Random forest model
+rf_model <- randomForest(
+  log_SOC_gKg ~ depth_class + secondary_descriptor + temp_s + precip_s,
+  data = gkg,
+  na.action = na.omit,
+  importance = TRUE,
+  ntree = 500
+)
+
+# View importance
+randomForest::importance(rf_model)
+randomForest::varImpPlot(rf_model)
+```
+
+# Random Forest evaluation
+```{r}
+# R² for depth 1
+rf_r2_d1 <- 1 - (rf_model_d1$mse[rf_model_d1$ntree] / var(depth_030$log_SOC_gKg, na.rm = TRUE))
+print(paste("Random Forest R²:", round(rf_r2_d1, 3)))
+#randomForest::importance(rf_model_d1)
+# R2 for depth 2
+rf_r2_d2 <- 1 - (rf_model_d2$mse[rf_model_d2$ntree] / var(depth_3060$log_SOC_gKg, na.rm = TRUE))
+print(paste("Random Forest R²:", round(rf_r2_d2, 3)))
+# R3 for depth 3
+rf_r2_d3 <- 1 - (rf_model_d3$mse[rf_model_d3$ntree] / var(depth_60$log_SOC_gKg, na.rm = TRUE))
+print(paste("Random Forest R²:", round(rf_r2_d3, 3)))
+```
+
+79% the variation in Soil Organic Carbon (SOC) is explained by this random forest model
+
+```{r}
+# RMSE
+rf_rmse_d1 <- sqrt(rf_model_d1$mse[rf_model_d1$ntree])
+rf_rmse_d2 <- sqrt(rf_model_d2$mse[rf_model_d1$ntree])
+rf_rmse_d3 <- sqrt(rf_model_d3$mse[rf_model_d1$ntree])
+
+print(paste("Random Forest RMSE:", round(rf_rmse_d1, 3)))
+print(paste("Random Forest RMSE:", round(rf_rmse_d2, 3)))
+print(paste("Random Forest RMSE:", round(rf_rmse_d3, 3)))
+```
+
+# Don't run this
+```{r}
+# Predicted vs observed
+pred <- predict(rf_model, newdata = gkg)
+obs <- gkg$log_SOC_gKg
+
+plot(obs, pred,
+     xlab = "Observed log(SOC g/kg)",
+     ylab = "Predicted log(SOC g/kg)",
+     main = "Random Forest Model Fit for Soil Organic Carbon",
+     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4))
+abline(0, 1, col = "red", lwd = 2)
+```
+
+```{r}
+# Predicted vs observed
+pred_d1 <- predict(rf_model_d1, newdata = depth_030)
+obs_d1 <- depth_030$log_SOC_gKg
+
+plot(obs_d1, pred_d1,
+     xlab = "Observed log(SOC g/kg)",
+     ylab = "Predicted log(SOC g/kg)",
+     main = "Random Forest Model Fit for Soil Organic Carbon, depth 0-30cm, 
+     R2 = 0.88",
+     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
+```
+
+```{r}
+importance_df_d1 <- data.frame(
+  Variable = rownames(randomForest::importance(rf_model_d1)),
+  Importance = randomForest::importance(rf_model_d1)[, 1])
+summary(importance_df_d1)
+importance_df_d1 <- importance_df_d1 %>%
+  mutate(
+    Variable = recode(
+      Variable,
+      temp_s = "Temperature",
+      precip_s = "Precipitation",
+      secondary_descriptor = "Management"))
+
+ggplot(importance_df_d1, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "#1b9e77", width = 0.4) +
+  #scale_x_discrete(expand = expansion(mult = 0.05)) +
+  labs(
+    x = "Variable",
+    y = "% Increase in MSE",
+    title = "Variable Importance in SOC Prediction,\nDepth 0–30 cm (Random Forest)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),aspect.ratio = 1/1)
 
 ```
+
+```{r}
+# Predicted vs observed
+pred_d2 <- predict(rf_model_d2, newdata = depth_3060)
+obs_d2 <- depth_3060$log_SOC_gKg
+
+plot(obs_d2, pred_d2,
+     xlab = "Observed log(SOC g/kg)",
+     ylab = "Predicted log(SOC g/kg)",
+     main = "Random Forest Model Fit for Soil Organic Carbon, depth 30-60cm, 
+     R2=0.74",
+     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
+```
+
+```{r}
+importance_df_d2 <- data.frame(
+  Variable = rownames(randomForest::importance(rf_model_d2)),
+  Importance = randomForest::importance(rf_model_d2)[, 1])
+
+importance_df_d2 <- importance_df_d2 %>%
+  mutate(
+    Variable = recode(
+      Variable,
+      temp_s = "Temperature",
+      precip_s = "Precipitation",
+      secondary_descriptor = "Management"))
+
+ggplot(importance_df_d2, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "#d95f02", width = 0.4) +
+  labs(
+    x = "Variable",
+    y = "% Increase in MSE",
+    title = "Variable Importance in SOC Prediction,\nDepth 30–60 cm (Random Forest)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),aspect.ratio = 1/1)
+```
+
+```{r}
+# Predicted vs observed
+pred_d3 <- predict(rf_model_d3, newdata = depth_60)
+obs_d3 <- depth_60$log_SOC_gKg
+
+plot(obs_d3, pred_d3,
+     xlab = "Observed log(SOC g/kg)",
+     ylab = "Predicted log(SOC g/kg)",
+     main = "Random Forest Model Fit for Soil Organic Carbon, depth 60+cm,
+     R2=0.78",
+     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
+```
+
+```{r}
+importance_df_d3 <- data.frame(
+  Variable = rownames(randomForest::importance(rf_model_d3)),
+  Importance = randomForest::importance(rf_model_d3)[, 1])
+
+importance_df_d3 <- importance_df_d3 %>%
+  mutate(
+    Variable = recode(
+      Variable,
+      temp_s = "Temperature",
+      precip_s = "Precipitation",
+      secondary_descriptor = "Management factors"))
+
+ggplot(importance_df_d3, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "#7570b3", width = 0.4) +
+  labs(
+    x = "Variable",
+    y = "% Increase in MSE",
+    title = "Variable Importance in SOC Prediction,\nDepth 60+ cm (Random Forest)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),aspect.ratio = 1/1)
+```
+
+
+
 
 # 1. Testing mixed-effect model
 - Soil depth has the strongest negative effect on SOC concentration: SOC decreases significantly with depth 30–60 cm: –0.94 log units, 60+ cm: –1.44 log units (p < 0.001). → Indicates topsoil holds most carbon storage.
@@ -304,14 +550,24 @@ soc_main %>%
 soc_landuse <-soc_main %>% filter(main_descriptor=="Land use", !is.na(log_SOC_gKg)) %>% select(
   id, year, lon, lat, location, country, main_descriptor, secondary_descriptor, temp_s, precip_s, depth_class, log_SOC_gKg)
 #explore
-ggplot(soc_landuse) + aes(x=factor(secondary_descriptor), y=log_SOC_gKg) + facet_wrap(~depth_class)+
-  geom_boxplot()+labs( title="Distribution of SOC by landuse and depth", x="Land use",y="Log SOC")
+ggplot(na.omit(soc_landuse)) + aes(x=factor(secondary_descriptor), y=log_SOC_gKg, fill=factor(secondary_descriptor)) + facet_wrap(~depth_class)+
+  geom_boxplot()+labs( title="Distribution of SOC by land use and depth", x="Land use",y="Log SOC")+
+  scale_fill_manual(values = c(
+    "Agroforestry" = "brown",
+    "Annual" = "darkgreen",
+    "Perennial"="beige" )) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold", size = 13),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank()
+  )
 ```
 
 ```{r}
 landuse <-lm(log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + depth_class, data = soc_landuse)
 summary(landuse)
-
 ```
 
 
@@ -336,10 +592,10 @@ depth1 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |co
   REML = FALSE
 )
 summary(depth1)
-library(MuMIn)
-r.squaredGLMM(depth1)
-confint(depth1, method = "Wald")
-summary(predict(depth1, re.form = NULL, se.fit = TRUE))
+#library(MuMIn)
+#r.squaredGLMM(depth1)
+#confint(depth1, method = "Wald")
+#summary(predict(depth1, re.form = NULL, se.fit = TRUE))
 ```
 The following linear mixed-effects model was fitted:
 
@@ -366,9 +622,9 @@ depth2 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |co
   REML = FALSE
 )
 summary(depth2)
-r.squaredGLMM(depth2)
-confint(depth2, method = "Wald")
-confint(depth2, method = "profile")
+#r.squaredGLMM(depth2)
+#confint(depth2, method = "Wald")
+#confint(depth2, method = "profile")
 ```
 
 ```{r}
@@ -378,9 +634,9 @@ depth3 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |co
   REML = FALSE
 )
 summary(depth3)
-r.squaredGLMM(depth3)
-confint(depth3, method = "Wald")
-confint(depth3, method = "profile")
+#r.squaredGLMM(depth3)
+#confint(depth3, method = "Wald")
+#confint(depth3, method = "profile")
 ```
 
 # Create a dataset that combines depth-level linear mixed model values for better visuals
@@ -492,9 +748,9 @@ soc_main <- soc_main %>%
       secondary_descriptor == "Tillage" &
         str_detect(additional_descriptor, regex("Minimum tillage", ignore_case = TRUE)) ~ 1,
       secondary_descriptor == "Tillage" &
-        str_detect(additional_descriptor, regex("Reduced tillage", ignore_case = TRUE)) ~ 2,
+        str_detect(additional_descriptor, regex("Reduced tillage", ignore_case = TRUE)) ~ 1,
       secondary_descriptor == "Tillage" &
-        str_detect(additional_descriptor, regex("Conventional tillage", ignore_case = TRUE)) ~ 3,
+        str_detect(additional_descriptor, regex("Conventional tillage", ignore_case = TRUE)) ~ 1,
       secondary_descriptor == "Tillage" ~ 1, 
       TRUE ~ NA_real_))
 ```
@@ -551,7 +807,6 @@ plot(sem_60_fert)
 ```{r}
 
 library(dplyr)
-
 landuse <- soc_main %>%
   filter(main_descriptor == "Land use",
          depth_class == "0-30") %>%
@@ -584,121 +839,111 @@ summary(sem_landuse)
 plot(sem_landuse)
 ```
 
+```{r}
+depth_030_landuse<-subset(soc_landuse, soc_landuse$depth_class=="0-30")
+depth_030_landuse$secondary_descriptor <- factor(depth_030_landuse$secondary_descriptor)
+depth_030_landuse$secondary_descriptor <- relevel(depth_030_landuse$secondary_descriptor, ref = "Agroforestry")
+
+m_soc_030_landuse <- lmer(
+  log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + (1|country),
+  data = depth_030_landuse)
+
+summary(m_soc_030_landuse)
+plot(sem_030_land)
+
+
+emm <- emmeans(m_soc_030_landuse, ~ secondary_descriptor)
+summary(emm)
+plot(emm)
+emm_df <- as.data.frame(emm)
+
+
+ggplot(emm_df,
+       aes(x = secondary_descriptor,
+           y = emmean)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lower.CL,
+                    ymax = upper.CL),
+                width = 0.2) +
+  theme_minimal() +
+  labs(
+    x = "Land Use",
+    y = "Predicted log(SOC)",
+    title = "0–30 cm: SOC by Land Use")
+```
 
 ## Depth 0-30, tillage intensity
 ```{r}
 m_till_030 <- lmer(tillage_intensity ~ temp_s + precip_s + (1 | country), data = depth_030)
-m_soc_030_till <- lmer(log_SOC_gKg ~  tillage_intensity + temp_s + precip_s +
-                    (1 | country), data = depth_030)
+m_soc_030_till <-lmer(log_SOC_gKg ~ tillage_intensity + temp_s + precip_s + (1 | country), data = depth_030)
 
 sem_030_till <- psem(m_till_030,m_soc_030_till)
+
 summary(sem_030_till)
 plot(sem_030_till)
 ```
 
+
 ```{r}
-# tidy + plotting libs
-library(tidyverse)
+# Customized for publication (requires 'DiagrammeR')
+library(DiagrammeR)
+install.packages("ggsem")
+library(ggsem)
+plot(sem_030_till, 
+     node_attrs = list(shape = "box", color = "black"),
+     edge_attrs = list(color = "grey"))
 
-# ---- REPLACE these vectors with your actual numeric inputs if they differ ----
-# I use the Std.Estimate and P.Value entries you posted.
-# Order: model1 = Fert 0-30, model2 = Fert 30-60, model3 = Fert 60+, model4 = Landuse, model5 = Tillage 0-30
+coefs_df <- coefs(sem_030_till, standardize = "scale")
 
-model_names <- c("sem_030_fert", "sem_3060_fert", "sem_60_fert", "sem_landuse", "sem_030_till")
+ggplot(coefs_df,
+       aes(x = Predictor,
+           y = Std.Estimate,
+           fill = Response)) +
+  geom_col(position = "dodge") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme_minimal() +
+  labs(y = "Standardized Effect",
+       title = "SEM Standardized Path Coefficients (0–30 cm)")
+```
+```{r}
+library(lavaan)
 
-# For each model we store the standardized estimates and p-values for:
-# a) temp -> mediator (std_est_tmp_med, p_tmp_med)
-# b) precip -> mediator (std_est_pr_med, p_pr_med)
-# c) mediator -> SOC (std_est_med_soc, p_med_soc)
-# d) temp -> SOC direct (std_est_tmp_soc, p_tmp_soc)
-# e) precip -> SOC direct (std_est_pr_soc, p_pr_soc)
+model <- '
+  tillage_intensity ~ temp_s + precip_s
+  log_SOC_gKg ~ tillage_intensity + temp_s + precip_s
+'
 
-# Fill these with the Std.Estimate and P.Value from your summaries:
-std_est_tmp_med <- c(0.8479, 0.8479, 2.3968, 0.0338, 0.2119)   # temp -> mediator (per model)
-p_tmp_med       <- c(0.0411, 0.0411, 0.1320, 0.2570, 0.4147)
+fit <- sem(model, data = depth_030)
 
-std_est_pr_med  <- c(0.1558, 0.1558, 0.8189, 0.0325, 0.0026)
-p_pr_med        <- c(0.3426, 0.3426, 0.0976, 0.4031, 0.9978)
+library(semPlot)
+semPaths(fit,
+         what = "std",
+         layout = "tree",
+         edge.label.cex = 1.2,
+         sizeMan = 8)
+```
 
-std_est_med_soc <- c(0.2096, 0.2096, 0.1265, -0.0183, -0.0102)
-p_med_soc       <- c(0.0019, 0.0019, 0.0719, 0.5774, 0.7022)
+## Depth 30-60, tillage intensity
+```{r}
+m_till_3060 <- lmer(tillage_intensity ~ temp_s + precip_s + (1 | country), data = depth_3060)
+m_soc_3060_till <-lmer(log_SOC_gKg ~ tillage_intensity + temp_s + precip_s + (1 | country), data = depth_3060)
 
-std_est_tmp_soc <- c(4.9219, 4.9219, 12.0249, -0.0692, 0.7904)
-p_tmp_soc       <- c(0.0000, 0.0000, 0.0000, 0.0341, 0.0000)
+sem_3060_till <- psem(m_till_3060,m_soc_3060_till)
 
-std_est_pr_soc  <- c(2.0678, 2.0678, 3.5021, 0.2080, 0.2752)
-p_pr_soc        <- c(0.0000, 0.0000, 0.0000, 0.0000, 0.2014)
+summary(sem_3060_till)
+plot(sem_3060_till)
+```
 
-# Put them into a tibble for further work
-sem_table <- tibble(
-  model = model_names,
-  std_tmp_med = std_est_tmp_med, p_tmp_med = p_tmp_med,
-  std_pr_med = std_est_pr_med,  p_pr_med = p_pr_med,
-  std_med_soc = std_est_med_soc, p_med_soc = p_med_soc,
-  std_tmp_soc = std_est_tmp_soc, p_tmp_soc = p_tmp_soc,
-  std_pr_soc  = std_est_pr_soc,  p_pr_soc = p_pr_soc
-)
 
-# compute standardized indirect effects (temp -> med -> SOC, precip -> med -> SOC)
-sem_table <- sem_table %>%
-  mutate(
-    ind_tmp = std_tmp_med * std_med_soc,
-    ind_pr  = std_pr_med  * std_med_soc,
-    # conservative significance tagging: only label indirect as significant if both component paths are significant
-    ind_tmp_sig = (p_tmp_med < 0.05 & p_med_soc < 0.05),
-    ind_pr_sig  = (p_pr_med  < 0.05 & p_med_soc < 0.05)
-  )
+## Depth 60+, tillage intensity ## DROP
+```{r}
+m_till_60 <- lmer(tillage_intensity ~ temp_s + precip_s + (1 | country), data = depth_60)
+m_soc_60_till <-lmer(log_SOC_gKg ~ tillage_intensity * temp_s + precip_s + (1 | country), data = depth_60)
 
-# pivot longer to plot per effect
-effects_long <- sem_table %>%
-  transmute(model,
-            # direct effects
-            temp_direct = std_tmp_soc, temp_direct_p = p_tmp_soc,
-            precip_direct = std_pr_soc, precip_direct_p = p_pr_soc,
-            # mediator paths
-            med_effect = std_med_soc, med_effect_p = p_med_soc,
-            # indirects
-            temp_indirect = ind_tmp, temp_indirect_sig = ind_tmp_sig,
-            precip_indirect = ind_pr, precip_indirect_sig = ind_pr_sig) %>%
-  pivot_longer(-model, names_to = "effect", values_to = "value", values_drop_na = FALSE) %>%
-  # separate the effect into type and variable for plotting labels
-  mutate(
-    effect_type = case_when(
-      str_detect(effect, "direct") ~ "Direct",
-      str_detect(effect, "indirect") ~ "Indirect",
-      effect == "med_effect" ~ "Mediator",
-      TRUE ~ "Other"
-    ),
-    var = case_when(
-      str_detect(effect, "temp") ~ "temp",
-      str_detect(effect, "precip") ~ "precip",
-      effect == "med_effect" ~ "mediator",
-      TRUE ~ effect
-    )
-  )
+sem_60_till <- psem(m_till_60,m_soc_60_till)
 
-# quick view
-# print(sem_table)
-# print(effects_long)
-
-# ---- Plot: grouped forest plot of standardized direct & indirect effects ----
-# We'll plot temp and precip effects side-by-side, and the mediator effect as its own color
-plot_df <- effects_long %>%
-  filter(effect_type %in% c("Direct", "Indirect", "Mediator")) %>%
-  mutate(
-    model = factor(model, levels = model_names),
-    var = factor(var, levels = c("temp", "precip", "mediator"))
-  )
-
-library(ggplot2)
-ggplot(plot_df, aes(x = model, y = value, fill = interaction(var, effect_type))) +
-  geom_col(position = position_dodge(width = 0.8), width = 0.6) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  scale_fill_brewer(palette = "Set2", name = "Path (type)") +
-  labs(x = "SEM model", y = "Standardized effect (std. estimate)",
-       title = "Standardized direct, mediator and indirect effects across SEMs") +
-  theme_minimal(base_size = 13) +
-  theme(axis.text.x = element_text(angle = 15, hjust = 1))
+summary(sem_60_till)
+plot(sem_60_till)
 ```
 
 
@@ -732,295 +977,6 @@ summary(sem_model_3)
 plot(sem_model_3)
 ```
 
-```{r}
-
-#sem_model <- 
-#m1.1 <- lm(log_SOC_gKg ~ temp_s + precip_s, data=soc_main)
-#m2.2 <-lm(secondary_num ~ temp_s + precip_s, data =soc_main)
-#m3.3 <-lm(log_SOC_gKg ~ secondary_num, data = soc_main)
-#fit_sem <-cfa(model = c(m1.1,m2.2,m3.3), data = soc_main)
-#summary(fit_sem)
-```
-
-```{r}
-#fert_data <- soc_main %>%
- # dplyr::filter(grepl("Fertilization", secondary_descriptor, ignore.case = TRUE))
-
-#fert_data <- fert_data %>%
- # dplyr::mutate(
-  #  secondary_descriptor_Fertilization = ifelse(
-   #   grepl("without", additional_descriptor, ignore.case = TRUE), 0,
-    #  ifelse(grepl("with|fertilizer|mg|kg|N|application", additional_descriptor, ignore.case = TRUE), 1, NA)
-    #)
-  #)
-
-#table(fert_data$secondary_descriptor_Fertilization)
-#library(lavaan)
-```
-
-```{r}
-gkg <- subset(fert_data, !is.na(log_SOC_gKg))
-mgha <-subset(fert_data,!is.na(log_SOC_MgHa))
-table(gkg$secondary_descriptor_Fertilization)
-```
-
-
-
-
-
-```{r}
-table(gkg$depth_class)
-car::vif(lm(temp_s ~ elevation_s + precip_s, data = gkg))
-length(unique(gkg$id))
-gkg$log_SOC_gkg <-as.numeric(gkg$log_SOC_gKg)
-hist(gkg$log_SOC_gkg, main="Distribution of SOC (g/kg)", col="skyblue", breaks=50)
-#barplot(table(gkg$log_SOC_gkg), main="Distribution of depth (cm)",col="skyblue")
-
-gkg %>% 
-  ggplot(aes(log_SOC_gKg)) +
-  geom_histogram() +
-  theme_light()
-
-```
-
-
-## Move on from SEM to Random Forest
-```{r}
-library(randomForest)
-```
-
-```{r}
-# Random forest model
-rf_model_d1 <- randomForest(
-  log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s,
-  data = depth_030,
-  na.action = na.omit,
-  importance = TRUE,
-  ntree = 500
-)
-
-# View importance
-randomForest::importance(rf_model_d1)
-randomForest::varImpPlot(rf_model_d1)
-```
-
-```{r}
-# Random forest model
-rf_model_d2 <- randomForest(
-  log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s,
-  data = depth_3060,
-  na.action = na.omit,
-  importance = TRUE,
-  ntree = 500
-)
-
-# View importance
-randomForest::importance(rf_model_d2)
-randomForest::varImpPlot(rf_model_d2)
-```
-
-```{r}
-# Random forest model
-rf_model_d3 <- randomForest(
-  log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s,
-  data = depth_60,
-  na.action = na.omit,
-  importance = TRUE,
-  ntree = 500
-)
-
-# View importance
-randomForest::importance(rf_model_d3)
-randomForest::varImpPlot(rf_model_d3)
-```
-
-
-```{r}
-soc_main$secondary_descriptor <- as.factor(soc_main$secondary_descriptor)
-gkg <- subset(soc_main, !is.na(log_SOC_gKg))
-gkg <- gkg %>%
-  dplyr::filter(!is.na(depth_class),
-                !is.na(secondary_descriptor),
-                !is.na(temp_s),
-                !is.na(precip_s),
-                !is.na(log_SOC_gKg))
-
-# Random forest model
-rf_model <- randomForest(
-  log_SOC_gKg ~ depth_class + secondary_descriptor + temp_s + precip_s,
-  data = gkg,
-  na.action = na.omit,
-  importance = TRUE,
-  ntree = 500
-)
-
-# View importance
-randomForest::importance(rf_model)
-randomForest::varImpPlot(rf_model)
-
-```
-
-# Random Forest evaluation
-```{r}
-# R² for depth 1
-rf_r2_d1 <- 1 - (rf_model_d1$mse[rf_model_d1$ntree] / var(depth_data[[1]]$log_SOC_gKg, na.rm = TRUE))
-print(paste("Random Forest R²:", round(rf_r2_d1, 3)))
-randomForest::importance(rf_model_d1)
-# R2 for depth 2
-rf_r2_d2 <- 1 - (rf_model_d2$mse[rf_model_d2$ntree] / var(depth_data[[2]]$log_SOC_gKg, na.rm = TRUE))
-print(paste("Random Forest R²:", round(rf_r2_d2, 3)))
-# R3 for depth 3
-rf_r2_d3 <- 1 - (rf_model_d3$mse[rf_model_d3$ntree] / var(depth_data[[3]]$log_SOC_gKg, na.rm = TRUE))
-print(paste("Random Forest R²:", round(rf_r2_d3, 3)))
-```
-
-79% the variation in Soil Organic Carbon (SOC) is explained by this random forest model
-
-```{r}
-# RMSE
-rf_rmse_d1 <- sqrt(rf_model_d1$mse[rf_model_d1$ntree])
-print(paste("Random Forest RMSE:", round(rf_rmse_d1, 3)))
-```
-
-```{r}
-# Predicted vs observed
-pred <- predict(rf_model, newdata = gkg)
-obs <- gkg$log_SOC_gKg
-
-plot(obs, pred,
-     xlab = "Observed log(SOC g/kg)",
-     ylab = "Predicted log(SOC g/kg)",
-     main = "Random Forest Model Fit for Soil Organic Carbon",
-     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4))
-abline(0, 1, col = "red", lwd = 2)
-```
-
-```{r}
-# Predicted vs observed
-pred_d1 <- predict(rf_model_d1, newdata = depth_data[[1]])
-obs_d1 <- depth_data[[1]]$log_SOC_gKg
-
-plot(obs_d1, pred_d1,
-     xlab = "Observed log(SOC g/kg)",
-     ylab = "Predicted log(SOC g/kg)",
-     main = "Random Forest Model Fit for Soil Organic Carbon, depth 0-30cm, 
-     R2 = 0.88",
-     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
-```
-
-```{r}
-importance_df_d1 <- data.frame(
-  Variable = rownames(randomForest::importance(rf_model_d1)),
-  Importance = randomForest::importance(rf_model_d1)[, 1])
-summary(importance_df_d1)
-importance_df_d1 <- importance_df_d1 %>%
-  mutate(
-    Variable = recode(
-      Variable,
-      temp_s = "Temperature",
-      precip_s = "Precipitation",
-      secondary_descriptor = "Management factors"))
-
-ggplot(importance_df_d1, aes(x = reorder(Variable, Importance), y = Importance)) +
-  geom_col(fill = "#1b9e77", width = 0.4) +
-  #scale_x_discrete(expand = expansion(mult = 0.05)) +
-  labs(
-    x = "Variable",
-    y = "% Increase in MSE",
-    title = "Variable Importance in SOC Prediction,\nDepth 0–30 cm (Random Forest)") +
-  theme_minimal(base_size = 11) +
-  theme(plot.title = element_text(face = "bold", hjust = 0.5),aspect.ratio = 1/1)
-
-```
-
-```{r}
-# Predicted vs observed
-pred_d2 <- predict(rf_model_d2, newdata = depth_data[[2]])
-obs_d2 <- depth_data[[2]]$log_SOC_gKg
-
-plot(obs_d2, pred_d2,
-     xlab = "Observed log(SOC g/kg)",
-     ylab = "Predicted log(SOC g/kg)",
-     main = "Random Forest Model Fit for Soil Organic Carbon, depth 30-60cm, 
-     R2=0.75",
-     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
-```
-
-```{r}
-importance_df_d2 <- data.frame(
-  Variable = rownames(randomForest::importance(rf_model_d2)),
-  Importance = randomForest::importance(rf_model_d2)[, 1])
-
-importance_df_d2 <- importance_df_d2 %>%
-  mutate(
-    Variable = recode(
-      Variable,
-      temp_s = "Temperature",
-      precip_s = "Precipitation",
-      secondary_descriptor = "Management factors"))
-
-ggplot(importance_df_d2, aes(x = reorder(Variable, Importance), y = Importance)) +
-  geom_col(fill = "#d95f02", width = 0.4) +
-  labs(
-    x = "Variable",
-    y = "% Increase in MSE",
-    title = "Variable Importance in SOC Prediction,\nDepth 30–60 cm (Random Forest)") +
-  theme_minimal(base_size = 11) +
-  theme(plot.title = element_text(face = "bold", hjust = 0.5),aspect.ratio = 1/1)
-```
-
-```{r}
-# Predicted vs observed
-pred_d3 <- predict(rf_model_d3, newdata = depth_data[[3]])
-obs_d3 <- depth_data[[3]]$log_SOC_gKg
-
-plot(obs_d3, pred_d3,
-     xlab = "Observed log(SOC g/kg)",
-     ylab = "Predicted log(SOC g/kg)",
-     main = "Random Forest Model Fit for Soil Organic Carbon, depth 60+cm,
-     R=0.784",
-     pch = 16, col = rgb(0.2, 0.4, 0.7, 0.4)) + abline(0, 1, col = "red", lwd = 2)
-```
-
-```{r}
-importance_df_d3 <- data.frame(
-  Variable = rownames(randomForest::importance(rf_model_d3)),
-  Importance = randomForest::importance(rf_model_d3)[, 1])
-
-importance_df_d3 <- importance_df_d3 %>%
-  mutate(
-    Variable = recode(
-      Variable,
-      temp_s = "Temperature",
-      precip_s = "Precipitation",
-      secondary_descriptor = "Management factors"))
-
-ggplot(importance_df_d3, aes(x = reorder(Variable, Importance), y = Importance)) +
-  geom_col(fill = "#7570b3", width = 0.4) +
-  labs(
-    x = "Variable",
-    y = "% Increase in MSE",
-    title = "Variable Importance in SOC Prediction,\nDepth 60+ cm (Random Forest)") +
-  theme_minimal(base_size = 11) +
-  theme(plot.title = element_text(face = "bold", hjust = 0.5),aspect.ratio = 1/1)
-```
-
-```{r}
-library(ggplot2)
-
-importance_df_d1 <- data.frame(
-  Variable = rownames(randomForest::importance(rf_model_d)),
-  Importance = randomForest::importance(rf_model_d1)[, 1]
-)
-
-ggplot(importance_df_d1, aes(x = reorder(Variable, Importance), y = Importance)) +
-  geom_col(fill = "#2E8B57") +
-  coord_flip() +
-  labs(x = "Variable", y = "% Increase in MSE",
-       title = "Variable Importance in SOC Prediction (Random Forest)") +
-  theme_minimal(base_size = 13)
-
-```
 
 # Example of a decision tree visualization
 ```{r}
