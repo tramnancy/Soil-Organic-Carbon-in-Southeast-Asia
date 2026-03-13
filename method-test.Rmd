@@ -73,6 +73,7 @@ library(tidyr)
 library(lme4)
 library(lmerTest) 
 library(piecewiseSEM)
+library(broom)
 ```
 
 # Dataset
@@ -570,8 +571,161 @@ landuse <-lm(log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + depth_clas
 summary(landuse)
 ```
 
+```{r}
+summary(model3_60)
+confint(model3_60, method = "profile")
+```
+
 
 # 1.1 By Depth
+```{r}
+#Depth 0-30
+model1_030<-lmer(log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + (1|country) + (1|year), data = depth_030, REML = FALSE, na.action = na.omit) #management
+model2_030<-lmer(log_SOC_gKg ~ tillage_intensity + temp_s + precip_s + (1|country) + (1|year), data = depth_030, REML = FALSE, na.action = na.omit) #tillage_binary
+model3_030<-lmer(log_SOC_gKg ~ fert_intensity + temp_s + precip_s + (1|country) + (1|year), data = depth_030, REML = FALSE, na.action = na.omit) #fertilization_binary
+# Depth 30-60
+model1_3060<-lmer(log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + (1|country) + (1|year), data = depth_3060, REML = FALSE, na.action = na.omit) #management
+model2_3060<-lmer(log_SOC_gKg ~ tillage_intensity + temp_s + precip_s + (1|country) + (1|year), data = depth_3060, REML = FALSE, na.action = na.omit) #tillage_binary
+model3_3060<-lmer(log_SOC_gKg ~ fert_intensity + temp_s + precip_s + (1|country) + (1|year), data = depth_3060, REML = FALSE, na.action = na.omit) #fertilization_binary
+#Depth 30-60
+model1_60<-lmer(log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + (1|country) + (1|year), data = depth_60, REML = FALSE, na.action = na.omit) #management
+#model2_60<-lmer(log_SOC_gKg ~ tillage_intensity + temp_s + precip_s + (1|country) + (1|year), data = depth_60, REML = FALSE, na.action = na.omit) #tillage_binary
+model3_60<-lmer(log_SOC_gKg ~ fert_intensity + temp_s + precip_s + (1|country) + (1|year), data = depth_60, REML = FALSE, na.action = na.omit) #fertilization_binary
+
+model_list <- list(
+  model1_030 = model1_030,
+  model2_030 = model2_030,
+  model3_030 = model3_030,
+  model1_3060 = model1_3060,
+  model2_3060 = model2_3060,
+  model3_3060 = model3_3060,
+  model1_60 = model1_60,
+  model3_60 = model3_60)
+
+extract_coefs <- function(model, model_name){
+  est <- fixef(model)
+  ci <- confint(model, parm = names(est), method = "Wald")
+  df <- data.frame(
+    term = names(est),
+    estimate = est,
+    conf.low = ci[,1],
+    conf.high = ci[,2],
+    Model = model_name
+  )
+  return(df)}
+coef_table <- do.call(rbind,
+  lapply(names(model_list), function(name){
+    extract_coefs(model_list[[name]], name)
+  })
+)
+
+library(dplyr)
+
+coef_table <- coef_table %>%
+  mutate(
+    Depth = case_when(
+      grepl("030", Model) ~ "0-30",
+      grepl("3060", Model) ~ "30-60",
+      grepl("_60", Model) ~ "60+"
+    ),
+    Practice = case_when(
+      grepl("model1", Model) ~ "Land use",
+      grepl("model2", Model) ~ "Tillage",
+      grepl("model3", Model) ~ "Fertilization"
+    )
+  )
+coef_plot <- coef_table %>%
+  filter(term != "(Intercept)")
+coef_plot <- coef_plot %>%
+  mutate(
+    Variable = case_when(
+      term == "temp_s" ~ "Temperature",
+      term == "precip_s" ~ "Precipitation",
+      term == "tillage_intensity" ~ "Tillage",
+      term == "fert_intensity" ~ "Fertilization",
+      grepl("secondary_descriptor", term) ~ "Land use",
+      TRUE ~ term
+    )
+  )
+coef_plot <- coef_plot %>%
+
+  mutate(
+    Significant = ifelse(conf.low * conf.high > 0, "Yes", "No")
+  )
+library(ggplot2)
+
+ggplot(coef_plot, aes(y = Variable, x = estimate, color = Depth)) +
+  geom_errorbarh(
+    aes(xmin = conf.low, xmax = conf.high),
+    height = 0.25
+  ) +
+  geom_point(aes(size = Significant)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_size_manual(values = c("Yes" = 4, "No" = 2)) +
+  labs(
+    x = "Slope estimate",
+    y = "",
+    title = "Drivers of Soil Organic Carbon across Soil Depths",
+    subtitle = "Mixed-effects model estimates with 95% confidence intervals"
+  ) +
+
+  theme_minimal(base_size = 14)
+```
+```{r}
+coef_plot$Variable <- gsub("secondary_descriptor", "Land use:", coef_plot$Variable)
+coef_plot <- coef_plot %>%
+  mutate(
+    Label = paste(Depth, Variable))
+coef_plot$Depth <- factor(
+  coef_plot$Depth,
+  levels = c("60+", "30-60", "0-30"))
+coef_plot <- coef_plot %>%
+  arrange(Depth, Variable)
+coef_plot$Variable <- gsub("secondary_descriptor", "Land use:", coef_plot$Variable)
+coef_plot$Label <- factor(coef_plot$Label, levels = unique(coef_plot$Label))
+ggplot(coef_plot, aes(y = Label, x = estimate, color = Depth)) +
+
+  geom_errorbarh(
+    aes(xmin = conf.low, xmax = conf.high),
+    height = 0.25,
+    size = 0.8
+  ) +
+
+  geom_point(aes(size = Significant)) +
+
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    color = "grey40"
+  ) +
+
+  scale_size_manual(values = c("Yes" = 4, "No" = 2)) +
+
+  scale_color_manual(values = c(
+    "60+" = "#1b9e77",
+    "30-60" = "#d95f02",
+    "0-30" = "#7570b3"
+  )) +
+
+  labs(
+    x = "Slope Estimate (Effect Size)",
+    y = "",
+    color = "Depth (cm)",
+    size = "Significant?",
+    title = "Effect of Management & Climate on SOC\nby Depth Class",
+    subtitle = "Points = Estimate\nHorizontal lines = 95% CI"
+  ) +
+
+  theme_minimal(base_size = 10) +
+
+  theme(
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
 ```{r}
 # Split by depth
 depth_030<-subset(soc_main, soc_main$depth_class=="0-30")
@@ -622,9 +776,9 @@ depth2 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |co
   REML = FALSE
 )
 summary(depth2)
-#r.squaredGLMM(depth2)
-#confint(depth2, method = "Wald")
-#confint(depth2, method = "profile")
+r.squaredGLMM(depth2)
+confint(depth2, method = "Wald")
+confint(depth2, method = "profile")
 ```
 
 ```{r}
@@ -636,10 +790,38 @@ depth3 <- lmer(log_SOC_gKg ~  secondary_descriptor  + temp_s + precip_s + (1 |co
 summary(depth3)
 #r.squaredGLMM(depth3)
 #confint(depth3, method = "Wald")
-#confint(depth3, method = "profile")
+confint(depth3, method = "profile")
 ```
 
 # Create a dataset that combines depth-level linear mixed model values for better visuals
+```{r}
+library(tidyverse)
+lmm_data <- tribble(
+  ~Name, ~Slope, ~LCI, ~UCI, ~Significant,
+  "0-30 Annual", -0.44, -0.67, -0.21, "Yes",
+  "30-60 Annual", -1.29, -1.85, -0.74, "Yes",
+  "60+ Annual", -0.22, -0.53,  0.08, "No",
+  "0-30 Perennial", -0.48, -0.69, -0.27, "Yes",
+  "30-60 Perennial", -0.83, -1.4, -0.26, "Yes",
+  "60+ Perennial", -0.23, -0.52, 0.07, "No",
+  "0-30 Tillage", -0.02, -0.16, 0.11, "No",
+  "30-60 Tillage", -0.15, -0.42, 0.12, "Yes",
+  "0-30 Fertilization", 0.19, 0.09, 0.29, "Yes",
+  "30-60 Fertilization", 0.3, -0.14, 0.61, "No",
+  "60+ Fertilization",  0.4, -0.003, 0.8, "No")
+
+#Depth seperate
+lmm_data <- lmm_data %>%
+  separate(Name, into = c("Depth", "Practice"), sep = " ", remove = FALSE)
+
+lmm_data$Depth <- factor(lmm_data$Depth, levels = c("60+", "30-60", "0-30"))
+lmm_data <- lmm_data %>%
+  arrange(Depth, Practice)
+
+lmm_data$Significant <- factor(lmm_data$Significant, levels = c("Yes", "No"))
+```
+
+# old one
 ```{r}
 library(tidyverse)
 lmm_data <- tribble(
@@ -678,9 +860,6 @@ lmm_data$Significant <- factor(lmm_data$Significant, levels = c("Yes", "No"))
 # Visualizing
 ```{r}
 # Visualizing
-library(ggplot2)
-library(ggplot2)
-
 ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
   geom_errorbarh(aes(xmin = LCI, xmax = UCI), height = 0.25, size = 0.8) +
   geom_point(aes(size = Significant)) +
@@ -839,6 +1018,7 @@ summary(sem_landuse)
 plot(sem_landuse)
 ```
 
+# Depth 0-30, emmeans for Land Use
 ```{r}
 depth_030_landuse<-subset(soc_landuse, soc_landuse$depth_class=="0-30")
 depth_030_landuse$secondary_descriptor <- factor(depth_030_landuse$secondary_descriptor)
@@ -848,17 +1028,11 @@ m_soc_030_landuse <- lmer(
   log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + (1|country),
   data = depth_030_landuse)
 
-summary(m_soc_030_landuse)
-plot(sem_030_land)
+emm1 <- emmeans(m_soc_030_landuse, ~ secondary_descriptor)
+summary(emm1)
 
-
-emm <- emmeans(m_soc_030_landuse, ~ secondary_descriptor)
-summary(emm)
-plot(emm)
-emm_df <- as.data.frame(emm)
-
-
-ggplot(emm_df,
+emm_df1 <- as.data.frame(emm1)
+ggplot(emm_df1,
        aes(x = secondary_descriptor,
            y = emmean)) +
   geom_point(size = 3) +
@@ -870,6 +1044,65 @@ ggplot(emm_df,
     x = "Land Use",
     y = "Predicted log(SOC)",
     title = "0–30 cm: SOC by Land Use")
+```
+emmeans plot display adjusted means, model-predicted SOG for each land-use type, holding temperature and precipitation constant. Dot = predicted, 95% CI. 
+Landuse: Annual = highest, agroforestry = smallest, but this is not statistically significnace (p=0.8)
+Climate (as known): temp: -0.06, precpip: 0.22 (significant)
+
+# Depth 30-60, emmeans for Land Use
+```{r}
+depth_3060_landuse<-subset(soc_landuse, soc_landuse$depth_class=="30-60")
+depth_3060_landuse$secondary_descriptor <- factor(depth_3060_landuse$secondary_descriptor)
+depth_3060_landuse$secondary_descriptor <- relevel(depth_3060_landuse$secondary_descriptor, ref = "Agroforestry")
+
+m_soc_3060_landuse <- lmer(
+  log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + (1|country),
+  data = depth_3060_landuse)
+
+emm2 <- emmeans(m_soc_3060_landuse, ~ secondary_descriptor)
+summary(emm2)
+
+emm_df2 <- as.data.frame(emm2)
+ggplot(emm_df2,
+       aes(x = secondary_descriptor,
+           y = emmean)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lower.CL,
+                    ymax = upper.CL),
+                width = 0.2) +
+  theme_minimal() +
+  labs(
+    x = "Land Use",
+    y = "Predicted log(SOC)",
+    title = "30–60 cm: SOC by Land Use")
+```
+
+# Depth 60+, emmeans for Land Use
+```{r}
+depth_60_landuse<-subset(soc_landuse, soc_landuse$depth_class=="60+")
+depth_60_landuse$secondary_descriptor <- factor(depth_60_landuse$secondary_descriptor)
+depth_60_landuse$secondary_descriptor <- relevel(depth_60_landuse$secondary_descriptor, ref = "Agroforestry")
+
+m_soc_60_landuse <- lmer(
+  log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + (1|country),
+  data = depth_60_landuse)
+
+emm3 <- emmeans(m_soc_60_landuse, ~ secondary_descriptor)
+summary(emm3)
+
+emm_df3 <- as.data.frame(emm3)
+ggplot(emm_df3,
+       aes(x = secondary_descriptor,
+           y = emmean)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lower.CL,
+                    ymax = upper.CL),
+                width = 0.2) +
+  theme_minimal() +
+  labs(
+    x = "Land Use",
+    y = "Predicted log(SOC)",
+    title = "60+ cm: SOC by Land Use")
 ```
 
 ## Depth 0-30, tillage intensity
