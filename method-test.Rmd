@@ -74,6 +74,7 @@ library(lme4)
 library(lmerTest) 
 library(piecewiseSEM)
 library(broom)
+library(ggplot2)
 ```
 
 # Dataset
@@ -154,6 +155,20 @@ All 3 depth levels (0-30, 30-60, 60+) have p <0.001, meaning residuals are not n
 # ANOVA (one-way)
 #aov1 <- aov(log_SOC_gKg ~ depth_class, data = gkg)
 #summary(aov1)
+#explore
+ggplot(gkg, aes(x =depth_class, y=log_SOC_gKg, fill=depth_class))+
+geom_boxplot()+labs( title="Distribution of 3 depth classes", x="Depth",y="Log SOC")+
+  scale_color_manual(values = c(
+    "60+" = "#1b9e77",
+    "30-60" = "#d95f02",
+    "0-30"  = "#7570b3" )) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold", size = 13),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank()
+  )
 ```
 F(2, 2696) = 239.5 (with p<0.001) so depth has a strong effect on SOC & there are significant differences in mean SOC (log scale) across depth classes. This means that SOC concentrations differ significantly among 3 depths. shallower soils have higher SOC. 
 
@@ -805,7 +820,7 @@ lmm_data <- tribble(
   "30-60 Perennial", -0.83, -1.4, -0.26, "Yes",
   "60+ Perennial", -0.23, -0.52, 0.07, "No",
   "0-30 Tillage", -0.02, -0.16, 0.11, "No",
-  "30-60 Tillage", -0.15, -0.42, 0.12, "Yes",
+  "30-60 Tillage", -0.15, -0.42, 0.12, "No",
   "0-30 Fertilization", 0.19, 0.09, 0.29, "Yes",
   "30-60 Fertilization", 0.3, -0.14, 0.61, "No",
   "60+ Fertilization",  0.4, -0.003, 0.8, "No")
@@ -1023,31 +1038,52 @@ plot(sem_landuse)
 depth_030_landuse<-subset(soc_landuse, soc_landuse$depth_class=="0-30")
 depth_030_landuse$secondary_descriptor <- factor(depth_030_landuse$secondary_descriptor)
 depth_030_landuse$secondary_descriptor <- relevel(depth_030_landuse$secondary_descriptor, ref = "Agroforestry")
-
+library(lme4)
 m_soc_030_landuse <- lmer(
   log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s + (1|country),
   data = depth_030_landuse)
-
+library(emmeans)
 emm1 <- emmeans(m_soc_030_landuse, ~ secondary_descriptor)
 summary(emm1)
 
 emm_df1 <- as.data.frame(emm1)
+
+#VISUAL
 ggplot(emm_df1,
        aes(x = secondary_descriptor,
-           y = emmean)) +
+           y = emmean,
+           color = secondary_descriptor)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = lower.CL,
                     ymax = upper.CL),
                 width = 0.2) +
-  theme_minimal() +
+  geom_text(aes(label = round(emmean, 2)),
+            hjust=1.5,
+            vjust = -.5,   # moves text above point
+            size = 4) +
+  scale_color_manual(values = c(
+    "Agroforestry" = "brown",
+    "Annual" = "darkgreen",
+    "Perennial" = "goldenrod"  # beige is too light → hard to see
+  )) +
+  theme_minimal(base_size = 14) +
   labs(
     x = "Land Use",
     y = "Predicted log(SOC)",
-    title = "0–30 cm: SOC by Land Use")
+    title = "SOC (g/kg) at 0–30 cm by Land Use Types"
+  ) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank()
+  )
+
 ```
 emmeans plot display adjusted means, model-predicted SOG for each land-use type, holding temperature and precipitation constant. Dot = predicted, 95% CI. 
 Landuse: Annual = highest, agroforestry = smallest, but this is not statistically significnace (p=0.8)
 Climate (as known): temp: -0.06, precpip: 0.22 (significant)
+
+
 
 # Depth 30-60, emmeans for Land Use
 ```{r}
@@ -1063,18 +1099,37 @@ emm2 <- emmeans(m_soc_3060_landuse, ~ secondary_descriptor)
 summary(emm2)
 
 emm_df2 <- as.data.frame(emm2)
+
+
+#VISUAL
 ggplot(emm_df2,
        aes(x = secondary_descriptor,
-           y = emmean)) +
+           y = emmean,
+           color = secondary_descriptor)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = lower.CL,
                     ymax = upper.CL),
                 width = 0.2) +
-  theme_minimal() +
+  geom_text(aes(label = round(emmean, 2)),
+            hjust=1.5,
+            vjust = -.5,   # moves text above point
+            size = 4) +
+  scale_color_manual(values = c(
+    "Agroforestry" = "brown",
+    "Annual" = "darkgreen",
+    "Perennial" = "goldenrod"  # beige is too light → hard to see
+  )) +
+  theme_minimal(base_size = 14) +
   labs(
     x = "Land Use",
     y = "Predicted log(SOC)",
-    title = "30–60 cm: SOC by Land Use")
+    title = "SOC (g/kg) at 30–60 cm by Land Use Types"
+  ) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank()
+  )
 ```
 
 # Depth 60+, emmeans for Land Use
@@ -1091,18 +1146,36 @@ emm3 <- emmeans(m_soc_60_landuse, ~ secondary_descriptor)
 summary(emm3)
 
 emm_df3 <- as.data.frame(emm3)
+
+#VISUAL
 ggplot(emm_df3,
        aes(x = secondary_descriptor,
-           y = emmean)) +
+           y = emmean,
+           color = secondary_descriptor)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = lower.CL,
                     ymax = upper.CL),
                 width = 0.2) +
-  theme_minimal() +
+  geom_text(aes(label = round(emmean, 2)),
+            hjust=1.5,
+            vjust = -.5,   # moves text above point
+            size = 4) +
+  scale_color_manual(values = c(
+    "Agroforestry" = "brown",
+    "Annual" = "darkgreen",
+    "Perennial" = "goldenrod"  # beige is too light → hard to see
+  )) +
+  theme_minimal(base_size = 14) +
   labs(
     x = "Land Use",
     y = "Predicted log(SOC)",
-    title = "60+ cm: SOC by Land Use")
+    title = "SOC (g/kg) at 30–60 cm by Land Use Types"
+  ) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank()
+  )
 ```
 
 ## Depth 0-30, tillage intensity
