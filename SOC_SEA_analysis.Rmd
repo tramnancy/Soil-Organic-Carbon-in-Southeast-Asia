@@ -1,0 +1,781 @@
+---
+title: "Modeling Soil Organic Carbon in Southeast Asia: Methods and Climate Implication"
+author: "Tram M. Tran"
+date: "2025–2026"
+institute: "Denison University"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    theme: lux
+    code-tools: true
+    code-fold: true
+    code-summary: "Show code"
+    code-copy: hover
+    link-external-newwindow: true
+    tbl-cap-location: top
+    fig-cap-location: bottom
+self-contained: true
+editor: source
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  fig.align  = "center",
+  out.width  = "90%",
+  results    = "hold",
+  fig.show   = "hold",
+  error      = TRUE,
+  warning    = FALSE,
+  message    = FALSE
+)
+par(mar = c(4.1, 4.1, 1.1, 4.1))
+
+# Collapsible output helper
+hooks <- knitr::knit_hooks$get()
+hook_foldable <- function(type) {
+  force(type)
+  function(x, options) {
+    res <- hooks[[type]](x, options)
+    if (isFALSE(options[[paste0("fold.", type)]])) return(res)
+    paste0(
+      "<details open><summary>",
+      gsub("^p", "P", gsub("^o", "O", type)),
+      "</summary>\n\n", res, "\n\n</details>"
+    )
+  }
+}
+knitr::knit_hooks$set(
+  output = hook_foldable("output"),
+  plot   = hook_foldable("plot")
+)
+```
+
+# Import Libraries
+
+All packages used in this analysis are loaded here. `set.seed(123)` ensures
+reproducibility of the Random Forest models.
+
+```{r libraries}
+# Data wrangling
+library(dplyr)
+library(tidyr)
+library(stringr) #for extraction of string in depth_class
+library(readr)
+library(sf) #coordinates mapping
+library(terra) # extract from raster file
+library(ggmap) # mapping      
+library(ggplot2) #visual
+library(patchwork)   # for panel figures
+library(randomForest) #RF
+library(lme4)        #Linear Mixed Effects Model
+library(lmerTest)    # p-values for lmer fixed effects
+library(MuMIn)       # pulling R-square
+library(emmeans)     # estimated marginal means
+library(piecewiseSEM)
+
+set.seed(123) # Reproducibility of Random Forest
+```
+
+---
+
+# 1. Data Import & Cleaning
+
+## 1.1 Load raw SOC dataset
+
+The dataset is from Gomez et al. (2024), 4,341 observations across nine Southeast Asian countries (1987–2023). See [doi: 10.1038/s41597-024-03213-3](https://doi.org/10.1038/s41597-024-03213-3).
+
+```{r load-data}
+soc_raw <- read.csv("Data/clean1.csv", stringsAsFactors = FALSE)
+
+# Making sure coordinates are numeric
+soc_raw$lon <- as.numeric(soc_raw$Longtitude)
+soc_raw$lat <- as.numeric(soc_raw$Latitude)
+
+#Checking rows and columns
+cat("Raw dataset dimensions:", nrow(soc_raw), "rows x", ncol(soc_raw), "cols\n") #print data
+```
+
+## 1.2 Merge CHELSA climate data
+
+Mean annual temperature (bio1, Celsius) and mean annual precipitation (bio12, mm) are extracted from CHELSA v2.1 climatologies (1981–2010) using site coordinates. See [Karger et al. (2021)](https://doi.org/10.16904/envidat.228).
+
+```{r chelsa}
+# Convert to simple features for spatial extraction. Tutorial: https://cran.r-project.org/web/packages/sf/vignettes/sf1.html 
+pts_sf <- st_as_sf(soc_raw, coords = c("lon", "lat"), crs = 4326)
+
+# Load CHELSA rasters (pre-downloaded to ../CHELSA_*)
+r_bio1  <- rast("../CHELSA_bio1_1981-2010_V.2.1.tif") #Raster file
+r_bio12 <- rast("../CHELSA_bio12_1981-2010_V.2.1.tif") #Raster file
+
+bio <- c(r_bio1, r_bio12)
+names(bio) <- c("bio1_temp", "bio12_precip")
+
+# Extract values and merge to data "soc_climate"
+# tutorial: https://rdrr.io/cran/terra/man/extract.html 
+vals <- terra::extract(bio, vect(pts_sf))
+soc_climate <- cbind(soc_raw, vals)
+
+#Checking rows after merging CHELSA
+cat("After CHELSA merge:", nrow(soc_climate), "rows\n") 
+```
+
+## 1.3 Depth classification
+
+Depth strings are parsed into a midpoint value and classified into three strata:
+0–30 cm (topsoil), 30–60 cm (midsoil), and >60 cm (deepsoil), following the
+rationale that ANOVA confirms a significant SOC × depth interaction (see Section 3.1).
+
+```{r depth-class}
+# understanding depth str_extract:
+# ^ = start of string, [0-9] one or more digits. $ = end of string --> grab the first and last number of string
+soc_climate <- soc_climate %>%
+  mutate(
+    depth_low  = as.numeric(str_extract(depth, "^[0-9]+")),
+    depth_high = as.numeric(str_extract(depth, "[0-9]+$")),
+    depth_mid  = (depth_low + depth_high) / 2, # taking the average as the main depth to categorize
+    depth_class = case_when(
+      depth_mid <= 30  ~ "0-30",
+      depth_mid > 30 & depth_mid <= 60 ~ "30-60",
+      depth_mid > 60  ~ "60+",
+      TRUE  ~ NA_character_ ))
+table(soc_climate$depth_class,useNA = "ifany") #there are 22 NAs
+```
+
+## 1.4 SOC unit harmonisation & log-transformation
+
+SOC values reported in diverse units are converted to g/kg (concentration) and Mg/ha (stock). This analysis uses **g/kg** (≈ 62% of observations). Due to strong right-skew and outliers, log-transformation is applied to all SOC values prior to modelling.
+
+```{r soc-units}
+soc_climate <- soc_climate %>%
+  mutate(
+    # Concentration (g/kg)
+    SOC_gKg = case_when(
+      soc.value_units == "%"     ~ soc.value * 10,
+      soc.value_units == "g_kg"  ~ soc.value,
+      soc.value_units == "g_g"   ~ soc.value * 1000,
+      soc.value_units == "mg_g"  ~ soc.value,        # 1 mg/g = 1 g/kg
+      soc.value_units == "mg_kg" ~ soc.value / 1000,
+      TRUE ~ NA_real_
+    ),
+    # Stock (Mg/ha)
+    SOC_MgHa = case_when(
+      soc.value_units == "Mg_ha" ~ soc.value,
+      soc.value_units == "g_m2"  ~ soc.value * 0.01,
+      soc.value_units == "kg_m2" ~ soc.value * 10,
+      soc.value_units == "kg_ha" ~ soc.value / 1000,
+      TRUE ~ NA_real_
+    )
+  )
+
+# Log-transform (shift if needed to ensure all values > 0)
+safe_log <- function(x) {
+  minv <- min(x[is.finite(x)], na.rm = TRUE)
+  shift <- ifelse(minv <= 0, abs(minv) + 1e-6, 0)
+  log(x + shift)
+}
+
+soc_climate <- soc_climate %>%
+  mutate(
+    log_SOC_gKg  = safe_log(SOC_gKg),
+    log_SOC_MgHa = safe_log(SOC_MgHa)
+  )
+
+print(summary(soc_climate$SOC_gKg))
+print(summary(soc_climate$log_SOC_gKg))
+```
+
+## 1.5 Clean analysis-ready dataset
+
+Apply inclusion criteria: retain observations with valid g/kg SOC, depth class, management descriptor, and climate data. Scale temperature and precipitation for model comparability.
+
+```{r soc-main}
+soc_main <- soc_climate %>%
+  mutate(
+    depth_class          = factor(depth_class, levels = c("0-30", "30-60", "60+")),
+    main_descriptor      = factor(main_descriptor),
+    secondary_descriptor = factor(secondary_descriptor),
+    additional_descriptor = factor(additional_descriptor),
+    year                 = as.numeric(year),
+    country              = as.factor(country),
+    temp_s               = as.numeric(scale(bio1_temp)),
+    precip_s             = as.numeric(scale(bio12_precip))
+  ) %>%
+  filter(
+    !is.na(log_SOC_gKg),
+    !is.na(depth_class),
+    !is.na(secondary_descriptor),
+    !is.na(temp_s),
+    !is.na(precip_s)
+  )
+
+# 2699 observations we work with
+print(table(soc_main$depth_class))
+```
+
+## 1.6 Create management intensity variables
+
+Binary intensity variables are constructed for fertilization (1 = with, 0 = without) and tillage (1 = with, 0 = without), encoding treatment presence based on `additional_descriptor` variable.
+
+```{r intensity-vars}
+soc_main <- soc_main %>%
+  mutate(
+    # Fertilization: 1 = fertilized, 0 = unfertilized
+    fert_intensity = case_when(
+      secondary_descriptor == "Fertilization" &
+        str_detect(additional_descriptor, regex("without", ignore_case = TRUE)) ~ 0,
+      secondary_descriptor == "Fertilization" &
+        str_detect(additional_descriptor, regex("with",    ignore_case = TRUE)) ~ 1,
+      secondary_descriptor == "Fertilization" ~ 1,  # default: treated
+      TRUE ~ NA_real_ ),
+    # Tillage: 1 = tilled (any intensity), 0 = no tillage
+    tillage_intensity = case_when(
+      secondary_descriptor == "Tillage" &
+        str_detect(additional_descriptor, regex("No tillage",          ignore_case = TRUE)) ~ 0,
+      secondary_descriptor == "Tillage" &
+        str_detect(additional_descriptor, regex("Minimum|Reduced|Conventional", ignore_case = TRUE)) ~ 1,
+      secondary_descriptor == "Tillage" ~ 1,         # default: tilled
+      TRUE ~ NA_real_))
+```
+
+## 1.7 Create subsets by depth
+
+```{r depth-subsets}
+depth_030  <- filter(soc_main, depth_class == "0-30")
+depth_3060 <- filter(soc_main, depth_class == "30-60")
+depth_60   <- filter(soc_main, depth_class == "60+")
+```
+
+---
+
+# 2. Descriptive Statistics & Exploratory Analysis
+
+## 2.1 Study site map
+
+```{r map-sites, fig.cap="Figure 1. Study locations across Southeast Asia. Point colour indicates depth class; size reflects number of co-located observations. Countries with the most observations are Indonesia, Thailand, and Vietnam."}
+
+map_data <- soc_main %>%
+  filter(!is.na(lon), !is.na(lat)) %>%
+  count(lon, lat, country, name = "n_obs")
+
+bbox <- c(left = 92, bottom = -11, right = 141, top = 28)
+
+map_attempt <- 
+  ggplot() +
+    borders("world",
+            regions = c("Indonesia","Thailand","Vietnam","Philippines",
+                        "Malaysia","Cambodia","Laos","Myanmar",
+                        "Singapore","Brunei","Timor-Leste"),
+            fill = "grey85", colour = "white") +
+    geom_point(data = map_data,
+               aes(lon, lat, size = n_obs),
+               color = "#c0392b", alpha = 0.65) +
+    coord_fixed(xlim = c(92, 141), ylim = c(-11, 28)) +
+    labs(title = "Study locations for SOC measurements in Southeast Asia",
+         x = "Longitude", y = "Latitude") +
+    scale_size(range = c(1, 6), name = "Number of Observations per Location") +
+    theme_minimal()
+
+map_attempt
+```
+
+## 2.2 SOC summary statistics by depth class
+
+```{r soc-summary}
+soc_main %>%
+  group_by(depth_class) %>%
+  summarise(
+    n         = n(),
+    mean_gkg  = round(mean(SOC_gKg,     na.rm = TRUE), 2),
+    median_gkg = round(median(SOC_gKg,  na.rm = TRUE), 2),
+    sd_gkg    = round(sd(SOC_gKg,       na.rm = TRUE), 2),
+    min_gkg   = round(min(SOC_gKg,      na.rm = TRUE), 2),
+    max_gkg   = round(max(SOC_gKg,      na.rm = TRUE), 2),
+    mean_log  = round(mean(log_SOC_gKg, na.rm = TRUE), 3),
+    median_log = round(median(log_SOC_gKg, na.rm = TRUE), 3)
+  )
+```
+
+## 2.3 ANOVA: depth class effect on SOC
+
+A one-way ANOVA tests whether mean log-SOC differs significantly across the
+three depth strata. This justifies running all subsequent models separately
+per depth class.
+
+```{r anova-depth, fig.cap="Figure 2. Distribution of log-transformed SOC (g/kg) by depth class. Topsoil consistently shows higher SOC; deepsoil shows the widest spread."}
+# Filter to complete g/kg observations
+gkg <- soc_main %>% filter(!is.na(log_SOC_gKg))
+
+# One-way ANOVA
+aov_depth <- aov(log_SOC_gKg ~ depth_class, data = gkg)
+summary(aov_depth)
+```
+
+
+```{r anova-depth, fig.cap="Figure 2. Distribution of log-transformed SOC (g/kg) by depth class. Topsoil consistently shows higher SOC; deepsoil shows the widest spread."}
+# Boxplot
+ggplot(gkg, aes(x = depth_class, y = log_SOC_gKg, fill = depth_class)) +
+  geom_boxplot(outlier.size = 0.8, alpha = 0.85) +
+  scale_fill_manual(values = c("0-30" = "#7570b3",
+                               "30-60" = "#d95f02",
+                               "60+"   = "#1b9e77")) +
+  labs(title = "Distribution of SOC by Depth Class",
+       x = "Depth (cm)", y = "log(SOC) g/kg") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none",
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        panel.grid.minor = element_blank())
+```
+
+**Result:** F(`r df.residual(aov_depth)` residual df) = `r round(summary(aov_depth)[[1]][["F value"]][1], 1)`, p < 0.001 — SOC concentrations differ significantly across depth strata, justifying depth-stratified modelling.
+
+## 2.4 Climate variable distributions
+
+```{r climate-dist, fig.cap="Figure 3. Distributions of mean annual precipitation (mm) and temperature (°C) across all observations. Most sites receive 1,000–3,000 mm precipitation and experience 24–28 °C."}
+soc_main %>%
+  select(bio1_temp, bio12_precip) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  mutate(variable = recode(variable,
+    bio1_temp    = "Mean Annual Temperature (°C)",
+    bio12_precip = "Mean Annual Precipitation (mm)")) %>%
+  ggplot(aes(x = value, fill = variable)) +
+  geom_histogram(bins = 30, colour = "white", alpha = 0.85) +
+  facet_wrap(~variable, scales = "free") +
+  scale_fill_manual(values = c(
+    "Mean Annual Temperature (°C)"    = "#E64B35",
+    "Mean Annual Precipitation (mm)"  = "#4DBBD5")) +
+  labs(title = "Distribution of Climate Variables", x = NULL, y = "Frequency") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold", size = 13),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        panel.grid.minor = element_blank())
+```
+
+## 2.5 SOC distribution by land use and depth
+
+```{r landuse-dist, fig.cap="Figure 4. Log-transformed SOC (g/kg) by land-use type (Annual, Agroforestry, Perennial) and depth class. Perennial systems tend to maintain higher SOC at midsoil and deepsoil depths."}
+soc_landuse <- soc_main %>%
+  filter(main_descriptor == "Land use", !is.na(log_SOC_gKg)) %>%
+  select(id, year, lon, lat, country, main_descriptor,
+         secondary_descriptor, temp_s, precip_s, depth_class, log_SOC_gKg)
+
+ggplot(na.omit(soc_landuse),
+       aes(x = secondary_descriptor, y = log_SOC_gKg,
+           fill = secondary_descriptor)) +
+  geom_boxplot(outlier.size = 0.8, alpha = 0.85) +
+  facet_wrap(~depth_class) +
+  scale_fill_manual(values = c(
+    "Agroforestry" = "#8B4513",
+    "Annual"       = "#2E7D32",
+    "Perennial"    = "#DAA520")) +
+  labs(title = "Distribution of SOC by Land Use and Depth",
+       x = "Land Use", y = "log(SOC) g/kg") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold", size = 13),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        panel.grid.minor = element_blank())
+```
+
+---
+
+# 3. Random Forest: Predictive Importance
+
+Random Forest models are fit separately per depth stratum using temperature, precipitation, and management category (`secondary_descriptor`) as predictors of log(SOC). Variable importance is assessed via permutation-based %IncMSE.
+
+## 3.1 Fit models (ntree = 500)
+
+```{r rf-models}
+# Helper: strip NAs needed for RF
+rf_data <- function(df) {
+  df %>% filter(
+    !is.na(log_SOC_gKg),
+    !is.na(temp_s), !is.na(precip_s),
+    !is.na(secondary_descriptor)
+  )
+}
+
+rf_d1 <- randomForest(
+  log_SOC_gKg ~ temp_s + precip_s + secondary_descriptor,
+  data = rf_data(depth_030), importance = TRUE, ntree = 500)
+
+rf_d2 <- randomForest(
+  log_SOC_gKg ~ temp_s + precip_s + secondary_descriptor,
+  data = rf_data(depth_3060), importance = TRUE, ntree = 500)
+
+rf_d3 <- randomForest(
+  log_SOC_gKg ~ temp_s + precip_s + secondary_descriptor,
+  data = rf_data(depth_60), importance = TRUE, ntree = 500)
+```
+
+## 3.2 Model performance (R² and RMSE)
+
+```{r rf-performance}
+rf_metrics <- function(model, label) {
+  r2   <- 1 - model$mse[model$ntree] / var(model$y, na.rm = TRUE)
+  rmse <- sqrt(model$mse[model$ntree])
+  data.frame(Depth = label, R2 = round(r2, 3), RMSE = round(rmse, 3))
+}
+
+rf_perf <- bind_rows(
+  rf_metrics(rf_d1, "0-30 cm"),
+  rf_metrics(rf_d2, "30-60 cm"),
+  rf_metrics(rf_d3, "60+ cm")
+)
+print(rf_perf)
+```
+
+## 3.3 Predicted vs. observed — panel figure
+
+```{r rf-pred-obs, fig.cap="Figure 5. Random Forest predicted vs. observed log(SOC g/kg) by depth class. Red line = 1:1 reference. Topsoil (R² = 0.88) shows the tightest fit; midsoil (R² = 0.74) shows the most dispersion."}
+pred_df <- bind_rows(
+  data.frame(Observed = rf_data(depth_030)$log_SOC_gKg,
+             Predicted = predict(rf_d1), Depth = "0–30 cm"),
+  data.frame(Observed = rf_data(depth_3060)$log_SOC_gKg,
+             Predicted = predict(rf_d2), Depth = "30–60 cm"),
+  data.frame(Observed = rf_data(depth_60)$log_SOC_gKg,
+             Predicted = predict(rf_d3), Depth = "60+ cm")
+)
+pred_df$Depth <- factor(pred_df$Depth, levels = c("0–30 cm","30–60 cm","60+ cm"))
+
+ggplot(pred_df, aes(x = Observed, y = Predicted)) +
+  geom_point(colour = "#4DBBD5", alpha = 0.4, size = 0.9) +
+  geom_abline(slope = 1, intercept = 0, colour = "red", linewidth = 0.8) +
+  facet_wrap(~Depth, scales = "free") +
+  labs(title = "Random Forest Model Fit — Predicted vs. Observed log(SOC)",
+       x = "Observed log(SOC g/kg)", y = "Predicted log(SOC g/kg)") +
+  theme_minimal(base_size = 13) +
+  theme(strip.text = element_text(face = "bold"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+## 3.4 Variable importance — panel figure
+
+```{r rf-varimp, fig.cap="Figure 6. Variable importance (%IncMSE) by depth class. Precipitation is the leading predictor at topsoil; temperature dominates at midsoil and deepsoil. Management importance declines with depth."}
+imp_label <- function(model, depth_col) {
+  data.frame(
+    Variable   = rownames(randomForest::importance(model)),
+    Importance = randomForest::importance(model)[, 1],
+    Depth      = depth_col
+  ) %>%
+    mutate(Variable = recode(Variable,
+      temp_s               = "Temperature",
+      precip_s             = "Precipitation",
+      secondary_descriptor = "Management"))
+}
+
+imp_all <- bind_rows(
+  imp_label(rf_d1, "0–30 cm"),
+  imp_label(rf_d2, "30–60 cm"),
+  imp_label(rf_d3, "60+ cm")
+)
+imp_all$Depth <- factor(imp_all$Depth, levels = c("0–30 cm","30–60 cm","60+ cm"))
+
+depth_colours <- c("0–30 cm" = "#7570b3", "30–60 cm" = "#d95f02", "60+ cm" = "#1b9e77")
+
+ggplot(imp_all, aes(x = reorder(Variable, Importance), y = Importance,
+                     fill = Depth)) +
+  geom_col(width = 0.5) +
+  coord_flip() +
+  facet_wrap(~Depth) +
+  scale_fill_manual(values = depth_colours) +
+  labs(title = "Variable Importance in SOC Prediction (Random Forest)",
+       x = NULL, y = "% Increase in MSE") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+---
+
+# 4. Linear Mixed-Effects Models
+
+LMMs quantify the direction and magnitude of fixed-effect predictors on
+log(SOC) while controlling for country and year as crossed random intercepts.
+Agroforestry is the reference category for land-use comparisons.
+
+**Model structure:**
+
+$$
+\log(\text{SOC}_{i}) =
+\beta_0 + \beta_1 \text{LandManagement}_{i}
++ \beta_2 \text{Temp}_{i} + \beta_3 \text{Precip}_{i}
++ u_{\text{country}[i]} + v_{\text{year}[i]} + \varepsilon_i
+$$
+
+where $u_{\text{country}} \sim \mathcal{N}(0, \sigma^2_{\text{country}})$,
+$v_{\text{year}} \sim \mathcal{N}(0, \sigma^2_{\text{year}})$,
+$\varepsilon_i \sim \mathcal{N}(0, \sigma^2)$.
+
+## 4.1 Land-use models by depth
+
+```{r lmm-landuse}
+# Agroforestry as reference
+relevel_lu <- function(df) {
+  df %>%
+    filter(main_descriptor == "Land use") %>%
+    mutate(secondary_descriptor = relevel(
+      factor(secondary_descriptor), ref = "Agroforestry"))
+}
+
+m_lu_030  <- lmer(log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s +
+                    (1|country) + (1|year),
+                  data = relevel_lu(depth_030), REML = FALSE, na.action = na.omit)
+
+m_lu_3060 <- lmer(log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s +
+                    (1|country) + (1|year),
+                  data = relevel_lu(depth_3060), REML = FALSE, na.action = na.omit)
+
+m_lu_60   <- lmer(log_SOC_gKg ~ secondary_descriptor + temp_s + precip_s +
+                    (1|country) + (1|year),
+                  data = relevel_lu(depth_60), REML = FALSE, na.action = na.omit)
+
+cat("--- Topsoil (0–30 cm): Land Use ---\n");  print(summary(m_lu_030))
+cat("--- Midsoil (30–60 cm): Land Use ---\n"); print(summary(m_lu_3060))
+cat("--- Deepsoil (60+ cm): Land Use ---\n");  print(summary(m_lu_60))
+
+# Marginal and conditional R²
+cat("\nR² (marginal | conditional):\n")
+cat("0-30 cm: "); print(round(r.squaredGLMM(m_lu_030), 3))
+cat("30-60cm: "); print(round(r.squaredGLMM(m_lu_3060), 3))
+cat("60+ cm:  "); print(round(r.squaredGLMM(m_lu_60), 3))
+
+# 95% Wald CIs
+cat("\n95% Wald CIs — 0-30 cm:\n");  print(confint(m_lu_030,  method = "Wald"))
+cat("95% Wald CIs — 30-60 cm:\n"); print(confint(m_lu_3060, method = "Wald"))
+cat("95% Wald CIs — 60+ cm:\n");   print(confint(m_lu_60,   method = "Wald"))
+```
+
+## 4.2 Fertilization models by depth
+
+```{r lmm-fert}
+m_fert_030  <- lmer(log_SOC_gKg ~ fert_intensity + temp_s + precip_s +
+                      (1|country) + (1|year),
+                    data = depth_030, REML = FALSE, na.action = na.omit)
+
+m_fert_3060 <- lmer(log_SOC_gKg ~ fert_intensity + temp_s + precip_s +
+                      (1|country) + (1|year),
+                    data = depth_3060, REML = FALSE, na.action = na.omit)
+
+m_fert_60   <- lmer(log_SOC_gKg ~ fert_intensity + temp_s + precip_s +
+                      (1|country) + (1|year),
+                    data = depth_60, REML = FALSE, na.action = na.omit)
+
+cat("--- Topsoil (0–30 cm): Fertilization ---\n");  print(summary(m_fert_030))
+cat("--- Midsoil (30–60 cm): Fertilization ---\n"); print(summary(m_fert_3060))
+cat("--- Deepsoil (60+ cm): Fertilization ---\n");  print(summary(m_fert_60))
+
+cat("\n95% Wald CIs — 0-30 cm:\n");  print(confint(m_fert_030,  method = "Wald"))
+cat("95% Wald CIs — 30-60 cm:\n"); print(confint(m_fert_3060, method = "Wald"))
+cat("95% Wald CIs — 60+ cm:\n");   print(confint(m_fert_60,   method = "Wald"))
+```
+
+## 4.3 Tillage models by depth
+
+Tillage at 60+ cm is not modelled due to n = 2 observations with tillage treatment.
+
+```{r lmm-tillage}
+m_till_030  <- lmer(log_SOC_gKg ~ tillage_intensity + temp_s + precip_s +
+                      (1|country) + (1|year),
+                    data = depth_030, REML = FALSE, na.action = na.omit)
+
+m_till_3060 <- lmer(log_SOC_gKg ~ tillage_intensity + temp_s + precip_s +
+                      (1|country) + (1|year),
+                    data = depth_3060, REML = FALSE, na.action = na.omit)
+
+cat("--- Topsoil (0–30 cm): Tillage ---\n");  print(summary(m_till_030))
+cat("--- Midsoil (30–60 cm): Tillage ---\n"); print(summary(m_till_3060))
+
+cat("\n95% Wald CIs — 0-30 cm:\n");  print(confint(m_till_030,  method = "Wald"))
+cat("95% Wald CIs — 30-60 cm:\n"); print(confint(m_till_3060, method = "Wald"))
+```
+
+## LMM fixed effects
+
+The forest plot below uses the manually curated coefficient table (from model
+outputs above) for clean visual presentation, consistent with the manuscript.
+
+```{r forest-plot, fig.cap="Figure 7. LMM fixed-effect estimates (β) with 95% confidence intervals by management predictor and depth class. Filled points = significant (CI does not cross zero). Dashed line at zero."}
+lmm_coefs <- tribble(
+  ~Name,                 ~Slope,  ~LCI,   ~UCI,   ~Significant,
+  "0-30 Annual",         -0.44,  -0.67,  -0.21,  "Yes",
+  "30-60 Annual",        -1.29,  -1.85,  -0.74,  "Yes",
+  "60+ Annual",          -0.22,  -0.53,   0.08,  "No",
+  "0-30 Perennial",      -0.48,  -0.69,  -0.27,  "Yes",
+  "30-60 Perennial",     -0.83,  -1.40,  -0.26,  "Yes",
+  "60+ Perennial",       -0.23,  -0.52,   0.07,  "No",
+  "0-30 Tillage",        -0.02,  -0.16,   0.11,  "No",
+  "30-60 Tillage",       -0.15,  -0.42,   0.12,  "No",
+  "0-30 Fertilization",   0.19,   0.09,   0.29,  "Yes",
+  "30-60 Fertilization",  0.30,  -0.14,   0.61,  "No",
+  "60+ Fertilization",    0.40,  -0.003,  0.80,  "No"
+) %>%
+  separate(Name, into = c("Depth", "Practice"), sep = " ", remove = FALSE) %>%
+  mutate(
+    Depth       = factor(Depth, levels = c("60+", "30-60", "0-30")),
+    Significant = factor(Significant, levels = c("Yes", "No")),
+    Name        = factor(Name, levels = rev(c(
+      "0-30 Annual",       "0-30 Perennial",    "0-30 Tillage",    "0-30 Fertilization",
+      "30-60 Annual",      "30-60 Perennial",   "30-60 Tillage",   "30-60 Fertilization",
+      "60+ Annual",        "60+ Perennial",                        "60+ Fertilization"
+    )))
+  )
+
+ggplot(lmm_coefs, aes(y = Name, x = Slope, colour = Depth)) +
+  geom_errorbarh(aes(xmin = LCI, xmax = UCI), height = 0.25, linewidth = 0.8) +
+  geom_point(aes(size = Significant)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+  scale_colour_manual(values = c("0-30" = "#7570b3",
+                                 "30-60" = "#d95f02",
+                                 "60+"   = "#1b9e77")) +
+  scale_size_manual(values = c("Yes" = 4, "No" = 2)) +
+  labs(title = "Effect of Land Management on SOC by Depth Class",
+       subtitle = "Points = estimate | Horizontal lines = 95% CI",
+       x = "Slope Estimate (log g/kg)", y = NULL,
+       colour = "Depth (cm)", size = "Significant?") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.y  = element_text(size = 11),
+        plot.title   = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey40"))
+```
+
+---
+
+# 5. Piecewise Structural Equation Modeling (SEM)
+
+piecewiseSEM fits locally-estimated LMM sub-models to simultaneously test direct (Climate → SOC) and indirect (Climate → Management → SOC) pathways. Country is included as a random effect in each sub-model. SEM models are depth-stratified for fertilization and tillage; land-use effects are assessed via Estimated Marginal Means (Section 6).
+
+## 5.1 Fertilization pathways
+
+### Topsoil (0–30 cm)
+
+```{r sem-fert-030}
+sem_fert_030 <- psem(
+  lmer(fert_intensity ~ temp_s + precip_s + (1|country), data = depth_030),
+  lmer(log_SOC_gKg   ~ fert_intensity + temp_s + precip_s + (1|country),
+       data = depth_030)
+)
+summary(sem_fert_030)
+plot(sem_fert_030)
+```
+
+### Midsoil (30–60 cm)
+
+```{r sem-fert-3060}
+sem_fert_3060 <- psem(
+  lmer(fert_intensity ~ temp_s + precip_s + (1|country), data = depth_3060),
+  lmer(log_SOC_gKg   ~ fert_intensity + temp_s + precip_s + (1|country),
+       data = depth_3060)
+)
+summary(sem_fert_3060)
+plot(sem_fert_3060)
+```
+
+### Deepsoil (60+ cm)
+
+```{r sem-fert-60}
+sem_fert_60 <- psem(
+  lmer(fert_intensity ~ temp_s + precip_s + (1|country), data = depth_60),
+  lmer(log_SOC_gKg   ~ fert_intensity + temp_s + precip_s + (1|country),
+       data = depth_60)
+)
+summary(sem_fert_60)
+plot(sem_fert_60)
+```
+
+## 5.2 Tillage pathways
+
+Tillage at 60+ cm is excluded (n = 2 with tillage treatment, insufficient for
+piecewiseSEM stability).
+
+### Topsoil (0–30 cm)
+
+```{r sem-till-030}
+sem_till_030 <- psem(
+  lmer(tillage_intensity ~ temp_s + precip_s + (1|country), data = depth_030),
+  lmer(log_SOC_gKg       ~ tillage_intensity + temp_s + precip_s + (1|country),
+       data = depth_030)
+)
+summary(sem_till_030)
+```
+
+### Midsoil (30–60 cm)
+
+```{r sem-till-3060}
+sem_till_3060 <- psem(
+  lmer(tillage_intensity ~ temp_s + precip_s + (1|country), data = depth_3060),
+  lmer(log_SOC_gKg       ~ tillage_intensity + temp_s + precip_s + (1|country),
+       data = depth_3060)
+)
+summary(sem_till_3060)
+```
+
+---
+
+# 6. Land-Use Effects: Estimated Marginal Means
+
+Because land-use categories are nominal and cannot serve as mediating response variables in piecewiseSEM, their climate-adjusted effects on SOC are estimated via Estimated Marginal Means (EMMs) from the LMMs fitted in Section 4.1, holding temperature and precipitation at their means.
+
+## 6.1 Compute EMMs for each depth
+
+```{r emm-compute}
+emm_030  <- emmeans(m_lu_030,  ~ secondary_descriptor)
+emm_3060 <- emmeans(m_lu_3060, ~ secondary_descriptor)
+emm_60   <- emmeans(m_lu_60,   ~ secondary_descriptor)
+
+cat("EMMs — Topsoil (0–30 cm):\n");  print(summary(emm_030))
+cat("\nEMMs — Midsoil (30–60 cm):\n"); print(summary(emm_3060))
+cat("\nEMMs — Deepsoil (60+ cm):\n");  print(summary(emm_60))
+```
+
+## 6.2 Panel figure: EMMs across all depths
+
+```{r emm-panel, fig.cap="Figure 9. Estimated Marginal Means (EMMs) for land-use categories at each depth class, holding temperature and precipitation at their means. Points = emmean; bars = 95% CI. Note convergence of EMMs at topsoil (p = 0.8) and divergence at midsoil."}
+lu_colours <- c(
+  "Agroforestry" = "#8B4513",
+  "Annual"       = "#2E7D32",
+  "Perennial"    = "#DAA520"
+)
+
+make_emm_plot <- function(emm_obj, depth_label) {
+  df <- as.data.frame(emm_obj)
+  ggplot(df, aes(x = secondary_descriptor, y = emmean,
+                 colour = secondary_descriptor)) +
+    geom_point(size = 3) +
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2,
+                  linewidth = 0.8) +
+    geom_text(aes(label = round(emmean, 2)),
+              hjust = 1.5, vjust = -0.5, size = 3.5) +
+    scale_colour_manual(values = lu_colours) +
+    labs(title = depth_label,
+         x = "Land Use", y = "Predicted log(SOC g/kg)") +
+    theme_minimal(base_size = 13) +
+    theme(legend.position  = "none",
+          plot.title       = element_text(face = "bold", hjust = 0.5),
+          panel.grid.minor = element_blank())
+}
+
+p1 <- make_emm_plot(emm_030,  "0–30 cm (p = 0.8, ns)")
+p2 <- make_emm_plot(emm_3060, "30–60 cm")
+p3 <- make_emm_plot(emm_60,   "60+ cm")
+
+# patchwork panel
+(p1 | p2 | p3) +
+  plot_annotation(
+    title   = "SOC (g/kg) by Land Use Type and Depth",
+    subtitle = "EMMs from LMM, climate covariates held at their mean values",
+    theme = theme(
+      plot.title    = element_text(face = "bold", size = 14, hjust = 0.5),
+      plot.subtitle = element_text(colour = "grey40", hjust = 0.5)
+    )
+  )
+```
+
+---
+
+# 7. Session Info
+
+```{r session-info}
+sessionInfo()
+```

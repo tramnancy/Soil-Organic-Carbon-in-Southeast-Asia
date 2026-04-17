@@ -7,7 +7,7 @@ institute: "Denison University"
 format: 
   html:
     toc: true
-    theme: lux # Check here for more themes: https://quarto.org/docs/output-formats/html-themes.html
+    theme: lux
     code-tools: true
     code-fold: true
     code-summary: "Code"
@@ -57,14 +57,14 @@ knitr::knit_hooks$set(
 # Import Library
 
 ```{r}
-library(dplyr)
-library(stringr)
-library(readr)
-library(sf)
-library(caret)
-library(ranger)
-library(xgboost)
-library(Matrix)
+library(dplyr) #for data import
+library(stringr) #what is this
+library(readr) #what does this do
+library(sf) #what's this? map? OH gg_map too
+library(caret) #this is for random forest
+library(ranger) #i dont need this
+library(xgboost) #i dont need this
+library(Matrix) #i probably dont need this
 library(ggplot2)
 library(geodata)
 library(terra)
@@ -153,8 +153,8 @@ All 3 depth levels (0-30, 30-60, 60+) have p <0.001, meaning residuals are not n
 ### move this chunk here below (no dataset found here)
 ```{r}
 # ANOVA (one-way)
-#aov1 <- aov(log_SOC_gKg ~ depth_class, data = gkg)
-#summary(aov1)
+aov1 <- aov(log_SOC_gKg ~ depth_class, data = gkg)
+summary(aov1)
 #explore
 ggplot(gkg, aes(x =depth_class, y=log_SOC_gKg, fill=depth_class))+
 geom_boxplot()+labs( title="Distribution of 3 depth classes", x="Depth",y="Log SOC")+
@@ -872,7 +872,7 @@ lmm_data <- lmm_data %>%
 lmm_data$Significant <- factor(lmm_data$Significant, levels = c("Yes", "No"))
 ```
 
-# Visualizing
+# Visualizing using new onw --> dont run old one
 ```{r}
 # Visualizing
 ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
@@ -892,6 +892,40 @@ ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
     size = "Significant?",
     title = "Effect of Management & Climate on SOC\nby Depth Class",
     subtitle = "Points = Estimate\nHorizontal lines = 95% CI"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(face = "bold")
+  )
+
+
+```
+```{r}
+# Define correct order for y-axis (0-30 on top, 60+ on bottom)
+lmm_data$Name <- factor(lmm_data$Name, levels = rev(c(
+  "0-30 Annual", "0-30 Perennial", "0-30 Tillage", "0-30 Fertilization",
+  "30-60 Annual", "30-60 Perennial", "30-60 Tillage", "30-60 Fertilization",
+  "60+ Annual", "60+ Perennial", "60+ Fertilization"
+)))
+
+ggplot(lmm_data, aes(y = Name, x = Slope, color = Depth)) +
+  geom_errorbarh(aes(xmin = LCI, xmax = UCI), height = 0.25, size = 0.8) +
+  geom_point(aes(size = Significant)) +
+  scale_size_manual(values = c("Yes" = 4, "No" = 2)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_color_manual(values = c(
+    "60+" = "#1b9e77",
+    "30-60" = "#d95f02",
+    "0-30"  = "#7570b3"
+  )) +
+  labs(
+    x = "Slope Estimate (Effect Size)",
+    y = "",
+    color = "Depth (cm)",
+    size = "Significant?",
+    title = "Effect of Land Management on SOC\nby Depth Class",
+    subtitle = "Points = Estimate | Horizontal lines = 95% CI"
   ) +
   theme_minimal(base_size = 14) +
   theme(
@@ -965,6 +999,7 @@ depth_60<-subset(soc_main, soc_main$depth_class=="60+")
 ## Ferilizer intensity by depth
 ### Depth 0-30, fertilizer intensity
 ```{r}
+library(piecewiseSEM)
 m_fert_030 <- lmer(fert_intensity ~ temp_s + precip_s + (1 | country), data = depth_030)
 m_soc_030_fert <- lmer(log_SOC_gKg ~  fert_intensity + temp_s + precip_s +
                     (1 | country), data = depth_030)
@@ -1099,8 +1134,10 @@ emm2 <- emmeans(m_soc_3060_landuse, ~ secondary_descriptor)
 summary(emm2)
 
 emm_df2 <- as.data.frame(emm2)
+```
 
 
+```{r}
 #VISUAL
 ggplot(emm_df2,
        aes(x = secondary_descriptor,
@@ -1169,7 +1206,7 @@ ggplot(emm_df3,
   labs(
     x = "Land Use",
     y = "Predicted log(SOC)",
-    title = "SOC (g/kg) at 30–60 cm by Land Use Types"
+    title = "SOC (g/kg) at 60+ cm by Land Use Types"
   ) +
   theme(
     legend.position = "none",
@@ -1190,44 +1227,6 @@ plot(sem_030_till)
 ```
 
 
-```{r}
-# Customized for publication (requires 'DiagrammeR')
-library(DiagrammeR)
-install.packages("ggsem")
-library(ggsem)
-plot(sem_030_till, 
-     node_attrs = list(shape = "box", color = "black"),
-     edge_attrs = list(color = "grey"))
-
-coefs_df <- coefs(sem_030_till, standardize = "scale")
-
-ggplot(coefs_df,
-       aes(x = Predictor,
-           y = Std.Estimate,
-           fill = Response)) +
-  geom_col(position = "dodge") +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  theme_minimal() +
-  labs(y = "Standardized Effect",
-       title = "SEM Standardized Path Coefficients (0–30 cm)")
-```
-```{r}
-library(lavaan)
-
-model <- '
-  tillage_intensity ~ temp_s + precip_s
-  log_SOC_gKg ~ tillage_intensity + temp_s + precip_s
-'
-
-fit <- sem(model, data = depth_030)
-
-library(semPlot)
-semPaths(fit,
-         what = "std",
-         layout = "tree",
-         edge.label.cex = 1.2,
-         sizeMan = 8)
-```
 
 ## Depth 30-60, tillage intensity
 ```{r}
