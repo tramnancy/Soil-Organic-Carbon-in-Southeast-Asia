@@ -104,8 +104,8 @@ Mean annual temperature (bio1, Celsius) and mean annual precipitation (bio12, mm
 pts_sf <- st_as_sf(soc_raw, coords = c("lon", "lat"), crs = 4326)
 
 # Load CHELSA rasters (pre-downloaded to ../CHELSA_*)
-r_bio1  <- rast("../CHELSA_bio1_1981-2010_V.2.1.tif") #Raster file
-r_bio12 <- rast("../CHELSA_bio12_1981-2010_V.2.1.tif") #Raster file
+r_bio1  <- rast("Data/CHELSA_bio1_1981-2010_V.2.1.tif") #Raster file
+r_bio12 <- rast("Data/CHELSA_bio12_1981-2010_V.2.1.tif") #Raster file
 
 bio <- c(r_bio1, r_bio12)
 names(bio) <- c("bio1_temp", "bio12_precip")
@@ -122,7 +122,7 @@ cat("After CHELSA merge:", nrow(soc_climate), "rows\n")
 ## 1.3 Depth classification
 
 Depth strings are parsed into a midpoint value and classified into three strata:
-0–30 cm (topsoil), 30–60 cm (midsoil), and >60 cm (deepsoil), following the
+0–30 cm (topsoil), 30–60 cm (midsoil), and 60+ cm (deepsoil), following the
 rationale that ANOVA confirms a significant SOC × depth interaction (see Section 3.1).
 
 ```{r depth-class}
@@ -257,7 +257,7 @@ map_data <- soc_main %>%
   filter(!is.na(lon), !is.na(lat)) %>%
   count(lon, lat, country, name = "n_obs")
 
-bbox <- c(left = 92, bottom = -11, right = 141, top = 28)
+bbox <- c(left = 92, bottom = -11, right = 130, top = 28)
 
 map_attempt <- 
   ggplot() +
@@ -269,11 +269,11 @@ map_attempt <-
     geom_point(data = map_data,
                aes(lon, lat, size = n_obs),
                color = "#c0392b", alpha = 0.65) +
-    coord_fixed(xlim = c(92, 141), ylim = c(-11, 28)) +
+    coord_fixed(xlim = c(92, 130), ylim = c(-11, 28)) +
     labs(title = "Study locations for SOC measurements in Southeast Asia",
          x = "Longitude", y = "Latitude") +
     scale_size(range = c(1, 6), name = "Number of Observations per Location") +
-    theme_minimal()
+    theme_classic()
 
 map_attempt
 ```
@@ -442,7 +442,8 @@ ggplot(pred_df, aes(x = Observed, y = Predicted)) +
   geom_point(colour = "#4DBBD5", alpha = 0.4, size = 0.9) +
   geom_abline(slope = 1, intercept = 0, colour = "red", linewidth = 0.8) +
   facet_wrap(~Depth, scales = "free") +
-  labs(title = "Random Forest Model Fit — Predicted vs. Observed log(SOC)",
+  labs(title = "Random Forest Model Fit",
+        subtitle ="Predicted vs. Observed log(SOC)",
        x = "Observed log(SOC g/kg)", y = "Predicted log(SOC g/kg)") +
   theme_minimal(base_size = 13) +
   theme(strip.text = element_text(face = "bold"),
@@ -584,11 +585,17 @@ m_till_3060 <- lmer(log_SOC_gKg ~ tillage_intensity + temp_s + precip_s +
                       (1|country) + (1|year),
                     data = depth_3060, REML = FALSE, na.action = na.omit)
 
+m_till_60 <- lmer(log_SOC_gKg ~ tillage_intensity + temp_s + precip_s +
+                      (1|country) + (1|year),
+                    data = depth_60, REML = FALSE, na.action = na.omit)
+
 cat("--- Topsoil (0–30 cm): Tillage ---\n");  print(summary(m_till_030))
 cat("--- Midsoil (30–60 cm): Tillage ---\n"); print(summary(m_till_3060))
+cat("--- Deepsoil (60 cm): Tillage ---\n"); print(summary(m_till_60))
 
 cat("\n95% Wald CIs — 0-30 cm:\n");  print(confint(m_till_030,  method = "Wald"))
 cat("95% Wald CIs — 30-60 cm:\n"); print(confint(m_till_3060, method = "Wald"))
+cat("95% Wald CIs — 30-60 cm:\n"); print(confint(m_till_60, method = "Wald"))
 ```
 
 ## LMM fixed effects
@@ -597,30 +604,43 @@ The forest plot below uses the manually curated coefficient table (from model
 outputs above) for clean visual presentation, consistent with the manuscript.
 
 ```{r forest-plot, fig.cap="Figure 7. LMM fixed-effect estimates (β) with 95% confidence intervals by management predictor and depth class. Filled points = significant (CI does not cross zero). Dashed line at zero."}
+library(tidyverse)
+
 lmm_coefs <- tribble(
-  ~Name,                 ~Slope,  ~LCI,   ~UCI,   ~Significant,
-  "0-30 Annual",         -0.44,  -0.67,  -0.21,  "Yes",
-  "30-60 Annual",        -1.29,  -1.85,  -0.74,  "Yes",
-  "60+ Annual",          -0.22,  -0.53,   0.08,  "No",
-  "0-30 Perennial",      -0.48,  -0.69,  -0.27,  "Yes",
-  "30-60 Perennial",     -0.83,  -1.40,  -0.26,  "Yes",
-  "60+ Perennial",       -0.23,  -0.52,   0.07,  "No",
-  "0-30 Tillage",        -0.02,  -0.16,   0.11,  "No",
-  "30-60 Tillage",       -0.15,  -0.42,   0.12,  "No",
-  "0-30 Fertilization",   0.19,   0.09,   0.29,  "Yes",
-  "30-60 Fertilization",  0.30,  -0.14,   0.61,  "No",
-  "60+ Fertilization",    0.40,  -0.003,  0.80,  "No"
-) %>%
-  separate(Name, into = c("Depth", "Practice"), sep = " ", remove = FALSE) %>%
-  mutate(
-    Depth       = factor(Depth, levels = c("60+", "30-60", "0-30")),
-    Significant = factor(Significant, levels = c("Yes", "No")),
-    Name        = factor(Name, levels = rev(c(
-      "0-30 Annual",       "0-30 Perennial",    "0-30 Tillage",    "0-30 Fertilization",
-      "30-60 Annual",      "30-60 Perennial",   "30-60 Tillage",   "30-60 Fertilization",
-      "60+ Annual",        "60+ Perennial",                        "60+ Fertilization"
-    )))
-  )
+  ~Name, ~Slope, ~LCI, ~UCI, ~Significant,
+  # Land Use
+  "0-30 Annual",      -0.0163, -0.2283,  0.1956, "No",
+  "30-60 Annual",     -0.9722, -1.6419, -0.3026, "Yes",
+  "60+ Annual",       -0.3456, -0.7016,  0.0105, "No",
+  "0-30 Perennial",    0.0029, -0.1905,  0.1963, "No",
+  "30-60 Perennial",  -0.5368, -1.2069,  0.1333, "No",
+  "60+ Perennial",    -0.2197, -0.5806,  0.1412, "No",
+  # Tillage
+  "0-30 Tillage",     -0.0266, -0.1632,  0.1099, "No",
+  "30-60 Tillage",    -0.1642, -0.4304,  0.1020, "No",
+  # Fertilization
+  "0-30 Fertilization",  0.2165,  0.1096, 0.3234, "Yes",
+  "30-60 Fertilization", 0.3084, -0.0959, 0.7127, "No",
+  "60+ Fertilization",   0.3937, -0.0499, 0.8373, "No"
+) %>% separate(Name,
+            into = c("Depth", "Practice"),
+            sep = " ",
+            remove = FALSE) %>%
+  mutate(Depth = factor(Depth,levels = c("60+", "30-60", "0-30")),
+    Significant = factor(Significant,levels = c("Yes", "No")),
+    Name = factor(Name,
+      levels = rev(c(
+        "0-30 Annual",
+        "0-30 Perennial",
+        "0-30 Tillage",
+        "0-30 Fertilization",
+        "30-60 Annual",
+        "30-60 Perennial",
+        "30-60 Tillage",
+        "30-60 Fertilization",
+        "60+ Annual",
+        "60+ Perennial",
+        "60+ Fertilization"))))
 
 ggplot(lmm_coefs, aes(y = Name, x = Slope, colour = Depth)) +
   geom_errorbarh(aes(xmin = LCI, xmax = UCI), height = 0.25, linewidth = 0.8) +
@@ -698,17 +718,17 @@ sem_till_030 <- psem(
        data = depth_030)
 )
 summary(sem_till_030)
+plot(sem_till_030)
 ```
 
 ### Midsoil (30–60 cm)
 
 ```{r sem-till-3060}
-sem_till_3060 <- psem(
-  lmer(tillage_intensity ~ temp_s + precip_s + (1|country), data = depth_3060),
+sem_till_60 <- psem(
+  lmer(tillage_intensity ~ temp_s + precip_s + (1|country), data = depth_60),
   lmer(log_SOC_gKg       ~ tillage_intensity + temp_s + precip_s + (1|country),
-       data = depth_3060)
-)
-summary(sem_till_3060)
+       data = depth_60))
+summary(sem_till_60)
 ```
 
 ---
@@ -735,8 +755,7 @@ cat("\nEMMs — Deepsoil (60+ cm):\n");  print(summary(emm_60))
 lu_colours <- c(
   "Agroforestry" = "#8B4513",
   "Annual"       = "#2E7D32",
-  "Perennial"    = "#DAA520"
-)
+  "Perennial"    = "#DAA520")
 
 make_emm_plot <- function(emm_obj, depth_label) {
   df <- as.data.frame(emm_obj)
@@ -746,11 +765,11 @@ make_emm_plot <- function(emm_obj, depth_label) {
     geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2,
                   linewidth = 0.8) +
     geom_text(aes(label = round(emmean, 2)),
-              hjust = 1.5, vjust = -0.5, size = 3.5) +
+              hjust = 1.5, vjust = -0.5, size = 2) +
     scale_colour_manual(values = lu_colours) +
     labs(title = depth_label,
          x = "Land Use", y = "Predicted log(SOC g/kg)") +
-    theme_minimal(base_size = 13) +
+    theme_minimal(base_size = 10) +
     theme(legend.position  = "none",
           plot.title       = element_text(face = "bold", hjust = 0.5),
           panel.grid.minor = element_blank())
@@ -766,7 +785,7 @@ p3 <- make_emm_plot(emm_60,   "60+ cm")
     title   = "SOC (g/kg) by Land Use Type and Depth",
     subtitle = "EMMs from LMM, climate covariates held at their mean values",
     theme = theme(
-      plot.title    = element_text(face = "bold", size = 14, hjust = 0.5),
+      plot.title    = element_text(face = "bold", size = 12, hjust = 0.5),
       plot.subtitle = element_text(colour = "grey40", hjust = 0.5)
     )
   )
