@@ -505,9 +505,10 @@ $$
 + u_{\text{country}[i]} + v_{\text{year}[i]} + \varepsilon_i
 $$
 
-where $u_{\text{country}} \sim \mathcal{N}(0, \sigma^2_{\text{country}})$,
-$v_{\text{year}} \sim \mathcal{N}(0, \sigma^2_{\text{year}})$,
-$\varepsilon_i \sim \mathcal{N}(0, \sigma^2)$.
+where 
+$$u_{\text{country}} \sim \mathcal{N}(0, \sigma^2_{\text{country}})$$
+$$v_{\text{year}} \sim \mathcal{N}(0, \sigma^2_{\text{year}})$$
+$$\varepsilon_i \sim \mathcal{N}(0, \sigma^2)$$
 
 ## 4.1 Land-use models by depth
 
@@ -650,14 +651,57 @@ ggplot(lmm_coefs, aes(y = Name, x = Slope, colour = Depth)) +
                                  "30-60" = "#d95f02",
                                  "60+"   = "#1b9e77")) +
   scale_size_manual(values = c("Yes" = 4, "No" = 2)) +
-  labs(title = "Effect of Land Management on SOC by Depth Class",
+  labs(title = "Effect of Land Management & Climate on SOC by Depth Class",
        subtitle = "Points = estimate | Horizontal lines = 95% CI",
        x = "Slope Estimate (log g/kg)", y = NULL,
        colour = "Depth (cm)", size = "Significant?") +
-  theme_minimal(base_size = 14) +
+  theme_minimal(base_size = 10) +
   theme(axis.text.y  = element_text(size = 11),
         plot.title   = element_text(face = "bold"),
         plot.subtitle = element_text(colour = "grey40"))
+```
+```{r}
+# CORRECTED lmm_coefs tribble using actual model outputs
+# Land use betas from land-use LMM; fert/tillage from their respective LMMs
+# CIs from Wald method
+
+lmm_coefs <- tribble(
+  ~Name,                 ~Slope,   ~LCI,    ~UCI,    ~Significant,
+  # Land use (vs Agroforestry)
+  "0-30 Annual",         -0.016,  -0.228,  +0.196,  "No",
+  "30-60 Annual",        -0.972,  -1.642,  -0.303,  "Yes",
+  "60+ Annual",          -0.346,  -0.702,  +0.010,  "No",   # marginal p=0.059
+  "0-30 Perennial",      +0.003,  -0.191,  +0.196,  "No",
+  "30-60 Perennial",     -0.537,  -1.207,  +0.133,  "No",
+  "60+ Perennial",       -0.220,  -0.581,  +0.141,  "No",
+  # Tillage
+  "0-30 Tillage",        -0.027,  -0.163,  +0.110,  "No",
+  "30-60 Tillage",       -0.164,  -0.430,  +0.102,  "No",
+  # Fertilization
+  "0-30 Fertilization",  +0.217,  +0.110,  +0.323,  "Yes",
+  "30-60 Fertilization", +0.308,  -0.096,  +0.713,  "No",
+  "60+ Fertilization",   +0.394,  -0.050,  +0.837,  "No",
+  # Climate (from land-use LMM for consistency)
+  "0-30 Precipitation",  +0.165,  +0.072,  +0.259,  "Yes",
+  "30-60 Precipitation", +0.080,  -0.205,  +0.364,  "No",
+  "60+ Precipitation",   -0.452,  -0.635,  -0.269,  "Yes",
+  "0-30 Temperature",    -0.034,  -0.089,  +0.022,  "No",
+  "30-60 Temperature",   -0.008,  -0.200,  +0.183,  "No",
+  "60+ Temperature",     -0.547,  -0.694,  -0.401,  "Yes"
+) %>%
+  separate(Name, into = c("Depth", "Practice"), sep = " ", remove = FALSE) %>%
+  mutate(
+    Depth = factor(Depth, levels = c("60+", "30-60", "0-30")),
+    Significant = factor(Significant, levels = c("Yes", "No")),
+    Name = factor(Name, levels = rev(c(
+      "0-30 Annual", "0-30 Perennial", "0-30 Tillage", "0-30 Fertilization",
+      "0-30 Precipitation", "0-30 Temperature",
+      "30-60 Annual", "30-60 Perennial", "30-60 Tillage", "30-60 Fertilization",
+      "30-60 Precipitation", "30-60 Temperature",
+      "60+ Annual", "60+ Perennial", "60+ Fertilization",
+      "60+ Precipitation", "60+ Temperature"
+    )))
+  )
 ```
 
 ---
