@@ -1,15 +1,14 @@
 # SOC-Southeast-Asia
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![R version](https://img.shields.io/badge/R-%3E%3D4.4.0-blue.svg)](https://www.r-project.org/)
 
 This repository contains data, code, and analysis supporting the senior research thesis:
 
-> **"Depth Matters: Disentangling Climate and Management Drivers of Soil Organic Carbon Across Southeast Asian Agroecosystems"**
+> **"Modeling Soil Organic Carbon (SOC) in Southeast Asia: Methods and Climate Implications"**
 > Tram M. Tran — Senior Thesis 2026, Data Analytics Program & Department of Sustainability and Environmental Studies, Denison University.
 > Research Advisors: Dr. Sarah Supp and Dr. Thomas Henshaw.
 
-This study analyzes 2,709 soil organic carbon (SOC) observations across nine Southeast Asian countries and three soil depth classes (topsoil 0–30 cm, midsoil 30–60 cm, deepsoil >60 cm) to disentangle the relative contributions of climate (temperature, precipitation) and land management (land-use type, fertilization, tillage) to SOC concentration. The analysis applies a convergent three-model framework: Random Forest (predictive importance), Linear Mixed-Effects Models (effect size and direction), and piecewise Structural Equation Modeling (direct and indirect pathway analysis).
+This study analyzes 2,709 soil organic carbon (SOC) observations across nine Southeast Asian countries and three soil depth classes (topsoil 0–30 cm, midsoil 30–60 cm, deepsoil 60+ cm) to understand the relative contributions of climate (temperature, precipitation) and land management (land-use type, fertilization, tillage) to SOC concentration. The analysis applies a convergent three-model framework: Random Forest (predictive importance), Linear Mixed-Effects Models (effect size and direction), and piecewise Structural Equation Modeling (direct and indirect pathway analysis).
 
 *Note: This repository is under active development (c) 2025–2026.*
 
@@ -17,7 +16,7 @@ This study analyzes 2,709 soil organic carbon (SOC) observations across nine Sou
 
 ## Code Authors
 
-- **Tram M. Tran**, Data Analytics & Sustainability and Environmental Studies, Denison University — [trant@denison.edu](mailto:trant@denison.edu)
+- **Tram M. Tran**, Data Analytics & Sustainability and Environmental Studies, Denison University — [tran_n3@denison.edu](mailto:trant@denison.edu)
 
 ## Research Advisors
 
@@ -78,7 +77,7 @@ Mean annual temperature (bio1, °C) and mean annual precipitation (bio12, mm) we
 
 > Karger, D. N., et al. (2021). Climatologies at high resolution for the Earth's land surface areas. *EnviDat*. [https://doi.org/10.16904/envidat.228](https://doi.org/10.16904/envidat.228)
 
-**Note on CHELSA temporal coverage:** CHELSA v2.1 represents 1981–2010 long-term climatological averages at each site location. These values capture site-level climatic context rather than year-of-measurement conditions. All 2,709 observations receive a CHELSA value regardless of their publication year (1987–2023); the 1981–2010 period defines the baseline grid, not the study period.
+**Note on CHELSA temporal coverage:** CHELSA v2.1 represents 1981–2010 long-term climatological averages at each site location. These values capture site-level climatic context rather than year-of-measurement conditions. All 2,699 observations receive a CHELSA value regardless of their publication year (1987–2023); the 1981–2010 period defines the baseline grid, not the study period.
 
 CHELSA rasters must be downloaded separately from [https://chelsa-climate.org/](https://chelsa-climate.org/) and placed in the `Data/CHELSA/` directory before running the analysis. See `Data/CHELSA/README_chelsa.txt` for required file names.
 
@@ -111,14 +110,15 @@ The analysis is contained in a single reproducible R Markdown file that runs seq
 
 ### Running the Analysis
 
-1. Download the Gomez et al. (2024) dataset from Figshare and place it at `Data/clean1.csv`.
-2. Download the two required CHELSA rasters (see `Data/CHELSA/README_chelsa.txt`) and place them in `Data/CHELSA/`.
-3. Open `SOC_SEA_analysis.Rmd` in RStudio and click **Knit**, or run all chunks sequentially.
+1. Before loading into GitHub and R, we used a Google Sheet to remove several irrelevant columns of the original dataset.
+2. Download the Gomez et al. (2024) dataset from Figshare and place it at `Data/clean1.csv`. 
+3. Download the two required CHELSA rasters (see `Data/CHELSA/README_chelsa.txt`) and place them in `Data/CHELSA/`.
+4. Open `SOC_SEA_analysis.Rmd` in RStudio and click **Knit**, or run all chunks sequentially.
 
 The file is structured in the following order:
 
 ```
-0. Libraries and setup
+Libraries and setup
 1. Data import and cleaning
    1.1 Load raw SOC dataset
    1.2 Append CHELSA climate data
@@ -136,8 +136,8 @@ The file is structured in the following order:
 3. Random Forest: predictive importance
    3.1 Fit models (ntree = 500, set.seed(123))
    3.2 Model performance (R² and RMSE)
-   3.3 Predicted vs. observed — panel figure
-   3.4 Variable importance — panel figure
+   3.3 Predicted vs. observed 
+   3.4 Variable importance 
 4. Linear Mixed-Effects Models
    4.1 Land-use models by depth (Agroforestry = reference)
    4.2 Fertilization models by depth
@@ -145,7 +145,7 @@ The file is structured in the following order:
    4.4 Forest plot — all LMM fixed effects
 5. Piecewise Structural Equation Modeling
    5.1 Fertilization pathways (0–30, 30–60, 60+ cm)
-   5.2 Tillage pathways (0–30 cm; 30–60 cm converged with all ns)
+   5.2 Tillage pathways (0–30 cm; 30–60 cm converged with all non-significant)
 6. Land-use effects: Estimated Marginal Means
    6.1 Compute EMMs for each depth
    6.2 Panel figure: EMMs across all depths
@@ -163,13 +163,12 @@ All figures are generated directly by `SOC_SEA_analysis.Rmd` and saved to the `F
 | Figure 1 | Study site map across nine SEA countries |
 | Figure 2 | SOC summary by depth class (ANOVA boxplot) |
 | Figure 3 | Climate variable distributions (precipitation and temperature) |
-| Figure 4 | SOC distribution by land-use type and depth |
-| Figure 5 | Random Forest predicted vs. observed (three-panel) |
-| Figure 6 | Variable importance (%IncMSE) by depth class (three-panel) |
-| Figure 7 | LMM forest plot — fixed-effect estimates with 95% CI by depth |
-| Figure 8 | Piecewise SEM path diagrams — fertilization pathways (three-panel) |
-| Figure 9 | Piecewise SEM path diagrams — tillage pathways (two-panel) |
-| Figure 10 | Estimated Marginal Means for land-use types by depth (three-panel) |
+| Figure 4 | Random Forest predicted vs. observed by depth|
+| Figure 5 | Variable importance (%IncMSE) by depth class by depth |
+| Figure 6 | LMM estimates with 95% CI by depth |
+| Figure 7 | Piecewise SEM path diagrams - fertilization |
+| Figure 8 | Piecewise SEM path diagrams - tillage pathways|
+| Figure 9 | Estimated Marginal Means for land-use types by depth |
 
 ---
 
@@ -188,24 +187,8 @@ All models were run separately for three depth strata: topsoil (0–30 cm), mids
 
 ## Key Findings
 
-- **Topsoil (0–30 cm):** Precipitation is the dominant positive predictor of SOC across all three modeling frameworks. Fertilization is the only management practice with a significant positive association with SOC (β = +0.217, p < 0.001, approximately +24%). Land-use type does not significantly differentiate topsoil SOC once climate is controlled (LMM: Annual β = −0.016, ns; Perennial β = +0.003, ns; EMM overall p = 0.8).
-- **Midsoil (30–60 cm):** Climate fixed effects lose significance. Annual cropping systems are associated with significantly lower SOC than agroforestry (β = −0.972, p = 0.005, approximately −62%). Perennial systems show the highest climate-adjusted EMM (2.71 log g/kg, ≈15.0 g/kg).
-- **Deepsoil (>60 cm):** Both temperature (β = −0.547, p < 0.001) and precipitation (β = −0.452, p < 0.001) show significant **negative** associations with SOC — a directional reversal from the surface pattern consistent with climate-driven decomposition and leaching in warm, wet lowland soils.
+- **Topsoil (0–30 cm):** Precipitation is the dominant positive predictor of SOC across all three modeling frameworks. Fertilization is the only management practice with a significant positive association with SOC (Coefficient = +0.217, p < 0.001, approximately +24%). Land-use type does not significantly differentiate topsoil SOC once climate is controlled (LMM: Annual Coefficient = −0.016, ns; Perennial β = +0.003, ns; EMM overall p = 0.8).
+- **Midsoil (30–60 cm):** Climate fixed effects lose significance. Annual cropping systems are associated with significantly lower SOC than agroforestry (Coefficient = −0.972, p = 0.005, approximately −62%). Perennial systems show the highest climate-adjusted EMM (2.71 log g/kg, ≈15.0 g/kg).
+- **Deepsoil (>60 cm):** Both temperature (Coefficient = −0.547, p < 0.001) and precipitation (Coefficient = −0.452, p < 0.001) show significant **negative** associations with SOC — a directional reversal from the surface pattern consistent with climate-driven decomposition and leaching in warm, wet lowland soils.
 
----
 
-## Citation
-
-If you use the code or data in this repository, please cite:
-
-> Tran, T. M. (2026). *Depth Matters: Disentangling Climate and Management Drivers of Soil Organic Carbon Across Southeast Asian Agroecosystems*. Senior Thesis, Denison University.
-
-And the underlying dataset:
-
-> Gomez, C., et al. (2024). A dataset for soil organic carbon in agricultural systems for the Southeast Asia region. *Scientific Data*. https://doi.org/10.1038/s41597-024-03213-3
-
----
-
-## License
-
-This repository is licensed under the [MIT License](LICENSE).
