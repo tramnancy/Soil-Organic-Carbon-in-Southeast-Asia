@@ -82,7 +82,7 @@ Data/
     └── depth_subsets/
         ├── depth_030.csv       # Topsoil observations (0–30 cm, n = 1935)
         ├── depth_3060.csv      # Midsoil observations (30–60 cm, n = 351)
-        └── depth_60.csv        # Deepsoil observations (>60 cm, n = 423)
+        └── depth_60.csv        # Deepsoil observations (60+ cm, n = 423)
 ```
 
 ---
@@ -168,7 +168,7 @@ All figures are generated directly by `SOC_SEA_analysis.Rmd` and saved to the `F
 | Piecewise SEM | Direct and indirect pathway associations | Climate → management → SOC | `piecewiseSEM` |
 | Estimated Marginal Means | Climate-adjusted land-use SOC comparisons | Land use (holding climate at mean) | `emmeans` |
 
-All models were run separately for three depth levels: topsoil (0–30 cm), midsoil (30–60 cm), and deepsoil (>60 cm). Random Forest models used `set.seed(123)` for reproducibility.
+All models were run separately for three depth levels: topsoil (0–30 cm), midsoil (30–60 cm), and deepsoil (60+ cm). Random Forest models used `set.seed(123)` for reproducibility.
 
 ---
 
@@ -176,6 +176,6 @@ All models were run separately for three depth levels: topsoil (0–30 cm), mids
 
 - **Topsoil (0–30 cm):** Precipitation is the dominant positive predictor of SOC across all three modeling frameworks. Fertilization is the only management practice with a significant positive association with SOC (Coefficient = +0.217, p < 0.001, approximately +24%). Land-use type does not significantly differentiate topsoil SOC once climate is controlled (LMM: Annual Coefficient = −0.016, non-significant; Perennial Coefficient = +0.003, non-significant; EMM overall p = 0.8).
 - **Midsoil (30–60 cm):** Climate fixed effects lose significance. Annual cropping systems are associated with significantly lower SOC than agroforestry. Agroforestry shows the highest climate-adjusted EMM, substantially exceeding perennial and annual systems.
-- **Deepsoil (>60 cm):** Both temperature (Coefficient = −0.547, p < 0.001) and precipitation (Coefficient = −0.452, p < 0.001) show significant negative associations with SOC. This is a directional reversal from the surface pattern consistent with climate-driven decomposition and leaching in warm, wet lowland soils.
+- **Deepsoil (60+ cm):** Both temperature (Coefficient = −0.547, p < 0.001) and precipitation (Coefficient = −0.452, p < 0.001) show significant negative associations with SOC. This is a directional reversal from the surface pattern consistent with climate-driven decomposition and leaching in warm, wet lowland soils.
 
 This study provides the first convergent multi-method, multi-depth analysis of SOC drivers across the region and establishes a reproducible analytical template for future large-scale observational SOC research in tropical agroecosystems.
