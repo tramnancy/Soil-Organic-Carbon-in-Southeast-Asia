@@ -5,7 +5,7 @@
 This repository contains data, code, and analysis supporting the senior research thesis:
 
 > **"Modeling Soil Organic Carbon (SOC) in Southeast Asia: Methods and Climate Implications"**
-> Tram M. Tran — Senior Thesis 2026, Data Analytics Program & Department of Sustainability and Environmental Studies, Denison University.
+> Tram M. Tran, Senior Thesis 2026, Data Analytics Program & Department of Sustainability and Environmental Studies, Denison University.
 > Research Advisors: Dr. Sarah Supp and Dr. Thomas Henshaw.
 
 This study analyzes 2,709 soil organic carbon (SOC) observations across nine Southeast Asian countries and three soil depth classes (topsoil 0–30 cm, midsoil 30–60 cm, deepsoil 60+ cm) to understand the relative contributions of climate (temperature, precipitation) and land management (land-use type, fertilization, tillage) to SOC concentration. The analysis applies a convergent three-model framework: Random Forest (predictive importance), Linear Mixed-Effects Models (effect size and direction), and piecewise Structural Equation Modeling (direct and indirect pathway analysis). See Senior Thesis Paper at https://drive.google.com/file/d/1aYA0HHAN_9SJGpidRaaXtyuS3qj3U2vb/view?usp=sharing 
