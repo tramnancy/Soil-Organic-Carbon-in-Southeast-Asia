@@ -8,7 +8,7 @@ This repository contains data, code, and analysis supporting the senior research
 > Tram M. Tran — Senior Thesis 2026, Data Analytics Program & Department of Sustainability and Environmental Studies, Denison University.
 > Research Advisors: Dr. Sarah Supp and Dr. Thomas Henshaw.
 
-This study analyzes 2,709 soil organic carbon (SOC) observations across nine Southeast Asian countries and three soil depth classes (topsoil 0–30 cm, midsoil 30–60 cm, deepsoil 60+ cm) to understand the relative contributions of climate (temperature, precipitation) and land management (land-use type, fertilization, tillage) to SOC concentration. The analysis applies a convergent three-model framework: Random Forest (predictive importance), Linear Mixed-Effects Models (effect size and direction), and piecewise Structural Equation Modeling (direct and indirect pathway analysis).
+This study analyzes 2,709 soil organic carbon (SOC) observations across nine Southeast Asian countries and three soil depth classes (topsoil 0–30 cm, midsoil 30–60 cm, deepsoil 60+ cm) to understand the relative contributions of climate (temperature, precipitation) and land management (land-use type, fertilization, tillage) to SOC concentration. The analysis applies a convergent three-model framework: Random Forest (predictive importance), Linear Mixed-Effects Models (effect size and direction), and piecewise Structural Equation Modeling (direct and indirect pathway analysis). See Senior Thesis Paper at https://drive.google.com/file/d/1aYA0HHAN_9SJGpidRaaXtyuS3qj3U2vb/view?usp=sharing 
 
 *Note: This repository is under active development (c) 2025–2026.*
 
@@ -95,7 +95,7 @@ The analysis is contained in a single reproducible R Markdown file that runs seq
 | --- | --- | --- |
 | `SOC_SEA_analysis.Rmd` | Complete analysis pipeline: data import, cleaning, CHELSA extraction, depth classification, descriptive statistics, ANOVA, Random Forest, LMM, piecewiseSEM, and EMM estimation. All figures and model outputs are generated from this file. | Full pipeline |
 
-### Running the Analysis
+### Steps to run the analysis
 
 1. Before loading into GitHub and R, we used a Google Sheet to remove several irrelevant columns of the original dataset.
 2. Download the Gomez et al. (2024) dataset from Figshare and place it at `Data/clean1.csv`. 
@@ -113,7 +113,7 @@ Libraries and setup
    1.4 SOC unit harmonization and log-transformation
    1.5 Build analysis-ready dataset (soc_main)
    1.6 Create management intensity variables (fert_intensity, tillage_intensity)
-   1.7 Depth-stratified subsets
+   1.7 Creating depth subsets
 2. Descriptive statistics and exploratory analysis
    2.1 Study site map
    2.2 SOC summary statistics by depth class
@@ -123,19 +123,19 @@ Libraries and setup
 3. Random Forest: predictive importance
    3.1 Fit models (ntree = 500, set.seed(123))
    3.2 Model performance (R² and RMSE)
-   3.3 Predicted vs. observed 
-   3.4 Variable importance 
+   3.3 Predicted vs. observed plot
+   3.4 Variable importance plot
 4. Linear Mixed-Effects Models
    4.1 Land-use models by depth (Agroforestry = reference)
    4.2 Fertilization models by depth
    4.3 Tillage models by depth
-   4.4 Forest plot — all LMM fixed effects
+   4.4 Plot for all LMM fixed effects
 5. Piecewise Structural Equation Modeling
    5.1 Fertilization pathways (0–30, 30–60, 60+ cm)
-   5.2 Tillage pathways (0–30 cm; 30–60 cm converged with all non-significant)
+   5.2 Tillage pathways (only 0–30 cm converged)
 6. Land-use effects: Estimated Marginal Means
    6.1 Compute EMMs for each depth
-   6.2 Panel figure: EMMs across all depths
+   6.2 Plot for EMMs across all depths
 7. Session info
 ```
 
@@ -168,7 +168,7 @@ All figures are generated directly by `SOC_SEA_analysis.Rmd` and saved to the `F
 | Piecewise SEM | Direct and indirect pathway associations | Climate → management → SOC | `piecewiseSEM` |
 | Estimated Marginal Means | Climate-adjusted land-use SOC comparisons | Land use (holding climate at mean) | `emmeans` |
 
-All models were run separately for three depth strata: topsoil (0–30 cm), midsoil (30–60 cm), and deepsoil (>60 cm). Random Forest models used `set.seed(123)` for reproducibility.
+All models were run separately for three depth levels: topsoil (0–30 cm), midsoil (30–60 cm), and deepsoil (>60 cm). Random Forest models used `set.seed(123)` for reproducibility.
 
 ---
 
