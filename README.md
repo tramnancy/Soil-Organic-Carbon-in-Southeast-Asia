@@ -1,37 +1,54 @@
-SOC-Southeast-Asia
-License: MIT R version
+# SOC-Southeast-Asia
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![R version](https://img.shields.io/badge/R-%3E%3D4.4.0-blue.svg)](https://www.r-project.org/)
 
 This repository contains data, code, and analysis supporting the senior research thesis:
 
-"Depth Matters: Disentangling Climate and Management Drivers of Soil Organic Carbon Across Southeast Asian Agroecosystems" Tram M. Tran — Senior Thesis 2026, Data Analytics Program & Department of Sustainability and Environmental Studies, Denison University. Research Advisors: Dr. Sarah Supp and Dr. Thomas Henshaw.
+> **"Depth Matters: Disentangling Climate and Management Drivers of Soil Organic Carbon Across Southeast Asian Agroecosystems"**
+> Tram M. Tran — Senior Thesis 2026, Data Analytics Program & Department of Sustainability and Environmental Studies, Denison University.
+> Research Advisors: Dr. Sarah Supp and Dr. Thomas Henshaw.
 
 This study analyzes 2,709 soil organic carbon (SOC) observations across nine Southeast Asian countries and three soil depth classes (topsoil 0–30 cm, midsoil 30–60 cm, deepsoil >60 cm) to disentangle the relative contributions of climate (temperature, precipitation) and land management (land-use type, fertilization, tillage) to SOC concentration. The analysis applies a convergent three-model framework: Random Forest (predictive importance), Linear Mixed-Effects Models (effect size and direction), and piecewise Structural Equation Modeling (direct and indirect pathway analysis).
 
-Note: This repository is under active development (c) 2025–2026.
+*Note: This repository is under active development (c) 2025–2026.*
 
-Code Authors
-Tram M. Tran, Data Analytics & Sustainability and Environmental Studies, Denison University — trant@denison.edu
-Research Advisors
-Dr. Sarah R. Supp, Denison University — supps@denison.edu
-Dr. Thomas Henshaw, Denison University — henshawt@denison.edu
-Getting Started
-Prerequisites
-This project requires R version 4.4.0 or greater. R is freely available at https://www.r-project.org/.
+---
+
+## Code Authors
+
+- **Tram M. Tran**, Data Analytics & Sustainability and Environmental Studies, Denison University — [trant@denison.edu](mailto:trant@denison.edu)
+
+## Research Advisors
+
+- **Dr. Sarah R. Supp**, Denison University — [supps@denison.edu](mailto:supps@denison.edu)
+- **Dr. Thomas Henshaw**, Denison University — [henshawt@denison.edu](mailto:henshawt@denison.edu)
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+This project requires **R version 4.4.0 or greater**. R is freely available at [https://www.r-project.org/](https://www.r-project.org/).
 
 The following R packages must be installed before running any analysis files:
 
-Package	Purpose
-dplyr, tidyr, stringr, readr	Data wrangling
-sf, terra	Spatial data handling and CHELSA raster extraction
-ggmap	Study site map (requires API key; fallback included)
-ggplot2, patchwork	Visualization and panel figures
-randomForest	Random Forest models
-lme4, lmerTest	Linear Mixed-Effects Models
-MuMIn	Marginal and conditional R² for LMMs
-emmeans	Estimated Marginal Means for land-use comparisons
-piecewiseSEM	Piecewise Structural Equation Modeling
+| Package | Purpose |
+| --- | --- |
+| `dplyr`, `tidyr`, `stringr`, `readr` | Data wrangling |
+| `sf`, `terra` | Spatial data handling and CHELSA raster extraction |
+| `ggmap` | Study site map (requires API key; fallback included) |
+| `ggplot2`, `patchwork` | Visualization and panel figures |
+| `randomForest` | Random Forest models |
+| `lme4`, `lmerTest` | Linear Mixed-Effects Models |
+| `MuMIn` | Marginal and conditional R² for LMMs |
+| `emmeans` | Estimated Marginal Means for land-use comparisons |
+| `piecewiseSEM` | Piecewise Structural Equation Modeling |
+
 Install all packages with:
 
+```r
 install.packages(c(
   "dplyr", "tidyr", "stringr", "readr",
   "sf", "terra", "ggmap",
@@ -39,26 +56,35 @@ install.packages(c(
   "randomForest", "lme4", "lmerTest",
   "MuMIn", "emmeans", "piecewiseSEM"
 ))
-Data
-Primary SOC Dataset
+```
+
+---
+
+## Data
+
+### Primary SOC Dataset
+
 This project uses the publicly available SOC dataset published by Gomez et al. (2024):
 
-Gomez, C., et al. (2024). A dataset for soil organic carbon in agricultural systems for the Southeast Asia region. Scientific Data. https://doi.org/10.1038/s41597-024-03213-3
-
-Dataset available on Figshare: https://doi.org/10.6084/m9.figshare.23736891
+> Gomez, C., et al. (2024). A dataset for soil organic carbon in agricultural systems for the Southeast Asia region. *Scientific Data*. [https://doi.org/10.1038/s41597-024-03213-3](https://doi.org/10.1038/s41597-024-03213-3)
+>
+> Dataset available on Figshare: [https://doi.org/10.6084/m9.figshare.23736891](https://doi.org/10.6084/m9.figshare.23736891)
 
 The dataset aggregates 4,341 observations from 209 peer-reviewed articles across nine Southeast Asian countries (1987–2023). After applying inclusion criteria, 2,709 observations were used in this analysis.
 
-Climate Data
+### Climate Data
+
 Mean annual temperature (bio1, °C) and mean annual precipitation (bio12, mm) were extracted from CHELSA v2.1 climatologies using site coordinates:
 
-Karger, D. N., et al. (2021). Climatologies at high resolution for the Earth's land surface areas. EnviDat. https://doi.org/10.16904/envidat.228
+> Karger, D. N., et al. (2021). Climatologies at high resolution for the Earth's land surface areas. *EnviDat*. [https://doi.org/10.16904/envidat.228](https://doi.org/10.16904/envidat.228)
 
-Note on CHELSA temporal coverage: CHELSA v2.1 represents 1981–2010 long-term climatological averages at each site location. These values capture site-level climatic context rather than year-of-measurement conditions. All 2,709 observations receive a CHELSA value regardless of their publication year (1987–2023); the 1981–2010 period defines the baseline grid, not the study period.
+**Note on CHELSA temporal coverage:** CHELSA v2.1 represents 1981–2010 long-term climatological averages at each site location. These values capture site-level climatic context rather than year-of-measurement conditions. All 2,709 observations receive a CHELSA value regardless of their publication year (1987–2023); the 1981–2010 period defines the baseline grid, not the study period.
 
-CHELSA rasters must be downloaded separately from https://chelsa-climate.org/ and placed in the Data/CHELSA/ directory before running the analysis. See Data/CHELSA/README_chelsa.txt for required file names.
+CHELSA rasters must be downloaded separately from [https://chelsa-climate.org/](https://chelsa-climate.org/) and placed in the `Data/CHELSA/` directory before running the analysis. See `Data/CHELSA/README_chelsa.txt` for required file names.
 
-Data Directory Structure
+### Data Directory Structure
+
+```
 Data/
 ├── clean1.csv                  # Cleaned SOC dataset (from Gomez et al. 2024)
 ├── CHELSA/
@@ -71,17 +97,27 @@ Data/
         ├── depth_030.csv       # Topsoil observations (0–30 cm, n = 1,935)
         ├── depth_3060.csv      # Midsoil observations (30–60 cm, n = 351)
         └── depth_60.csv        # Deepsoil observations (>60 cm, n = 423)
-Code
+```
+
+---
+
+## Code
+
 The analysis is contained in a single reproducible R Markdown file that runs sequentially from raw data to final model outputs and figures.
 
-File	Description	Stage
-SOC_SEA_analysis.Rmd	Complete analysis pipeline: data import, cleaning, CHELSA extraction, depth classification, descriptive statistics, ANOVA, Random Forest, LMM, piecewiseSEM, and EMM estimation. All figures and model outputs are generated from this file.	Full pipeline
-Running the Analysis
-Download the Gomez et al. (2024) dataset from Figshare and place it at Data/clean1.csv.
-Download the two required CHELSA rasters (see Data/CHELSA/README_chelsa.txt) and place them in Data/CHELSA/.
-Open SOC_SEA_analysis.Rmd in RStudio and click Knit, or run all chunks sequentially.
+| File | Description | Stage |
+| --- | --- | --- |
+| `SOC_SEA_analysis.Rmd` | Complete analysis pipeline: data import, cleaning, CHELSA extraction, depth classification, descriptive statistics, ANOVA, Random Forest, LMM, piecewiseSEM, and EMM estimation. All figures and model outputs are generated from this file. | Full pipeline |
+
+### Running the Analysis
+
+1. Download the Gomez et al. (2024) dataset from Figshare and place it at `Data/clean1.csv`.
+2. Download the two required CHELSA rasters (see `Data/CHELSA/README_chelsa.txt`) and place them in `Data/CHELSA/`.
+3. Open `SOC_SEA_analysis.Rmd` in RStudio and click **Knit**, or run all chunks sequentially.
+
 The file is structured in the following order:
 
+```
 0. Libraries and setup
 1. Data import and cleaning
    1.1 Load raw SOC dataset
@@ -114,40 +150,62 @@ The file is structured in the following order:
    6.1 Compute EMMs for each depth
    6.2 Panel figure: EMMs across all depths
 7. Session info
-Figures
-All figures are generated directly by SOC_SEA_analysis.Rmd and saved to the Figures/ directory. Key outputs include:
+```
 
-Figure	Description
-Figure 1	Study site map across nine SEA countries
-Figure 2	SOC summary by depth class (ANOVA boxplot)
-Figure 3	Climate variable distributions (precipitation and temperature)
-Figure 4	SOC distribution by land-use type and depth
-Figure 5	Random Forest predicted vs. observed (three-panel)
-Figure 6	Variable importance (%IncMSE) by depth class (three-panel)
-Figure 7	LMM forest plot — fixed-effect estimates with 95% CI by depth
-Figure 8	Piecewise SEM path diagrams — fertilization pathways (three-panel)
-Figure 9	Piecewise SEM path diagrams — tillage pathways (two-panel)
-Figure 10	Estimated Marginal Means for land-use types by depth (three-panel)
-Methods Summary
-Model	Purpose	Key predictors	R package
-Random Forest	Variable importance ranking (%IncMSE)	Temperature, precipitation, management (secondary_descriptor)	randomForest
-Linear Mixed-Effects Model	Fixed-effect estimates with 95% CI; country + year as random intercepts	Land use, fertilization, tillage, temperature, precipitation	lme4, lmerTest
-Piecewise SEM	Direct and indirect pathway associations	Climate → management → SOC	piecewiseSEM
-Estimated Marginal Means	Climate-adjusted land-use SOC comparisons	Land use (holding climate at mean)	emmeans
-All models were run separately for three depth strata: topsoil (0–30 cm), midsoil (30–60 cm), and deepsoil (>60 cm). Random Forest models used set.seed(123) for reproducibility.
+---
 
-Key Findings
-Topsoil (0–30 cm): Precipitation is the dominant positive predictor of SOC across all three modeling frameworks. Fertilization is the only management practice with a significant positive association with SOC (β = +0.217, p < 0.001, approximately +24%). Land-use type does not significantly differentiate topsoil SOC once climate is controlled (LMM: Annual β = −0.016, ns; Perennial β = +0.003, ns; EMM overall p = 0.8).
-Midsoil (30–60 cm): Climate fixed effects lose significance. Annual cropping systems are associated with significantly lower SOC than agroforestry (β = −0.972, p = 0.005, approximately −62%). Perennial systems show the highest climate-adjusted EMM (2.71 log g/kg, ≈15.0 g/kg).
-Deepsoil (>60 cm): Both temperature (β = −0.547, p < 0.001) and precipitation (β = −0.452, p < 0.001) show significant negative associations with SOC — a directional reversal from the surface pattern consistent with climate-driven decomposition and leaching in warm, wet lowland soils.
-Citation
+## Figures
+
+All figures are generated directly by `SOC_SEA_analysis.Rmd` and saved to the `Figures/` directory. Key outputs include:
+
+| Figure | Description |
+| --- | --- |
+| Figure 1 | Study site map across nine SEA countries |
+| Figure 2 | SOC summary by depth class (ANOVA boxplot) |
+| Figure 3 | Climate variable distributions (precipitation and temperature) |
+| Figure 4 | SOC distribution by land-use type and depth |
+| Figure 5 | Random Forest predicted vs. observed (three-panel) |
+| Figure 6 | Variable importance (%IncMSE) by depth class (three-panel) |
+| Figure 7 | LMM forest plot — fixed-effect estimates with 95% CI by depth |
+| Figure 8 | Piecewise SEM path diagrams — fertilization pathways (three-panel) |
+| Figure 9 | Piecewise SEM path diagrams — tillage pathways (two-panel) |
+| Figure 10 | Estimated Marginal Means for land-use types by depth (three-panel) |
+
+---
+
+## Methods Summary
+
+| Model | Purpose | Key predictors | R package |
+| --- | --- | --- | --- |
+| Random Forest | Variable importance ranking (%IncMSE) | Temperature, precipitation, management (secondary_descriptor) | `randomForest` |
+| Linear Mixed-Effects Model | Fixed-effect estimates with 95% CI; country + year as random intercepts | Land use, fertilization, tillage, temperature, precipitation | `lme4`, `lmerTest` |
+| Piecewise SEM | Direct and indirect pathway associations | Climate → management → SOC | `piecewiseSEM` |
+| Estimated Marginal Means | Climate-adjusted land-use SOC comparisons | Land use (holding climate at mean) | `emmeans` |
+
+All models were run separately for three depth strata: topsoil (0–30 cm), midsoil (30–60 cm), and deepsoil (>60 cm). Random Forest models used `set.seed(123)` for reproducibility.
+
+---
+
+## Key Findings
+
+- **Topsoil (0–30 cm):** Precipitation is the dominant positive predictor of SOC across all three modeling frameworks. Fertilization is the only management practice with a significant positive association with SOC (β = +0.217, p < 0.001, approximately +24%). Land-use type does not significantly differentiate topsoil SOC once climate is controlled (LMM: Annual β = −0.016, ns; Perennial β = +0.003, ns; EMM overall p = 0.8).
+- **Midsoil (30–60 cm):** Climate fixed effects lose significance. Annual cropping systems are associated with significantly lower SOC than agroforestry (β = −0.972, p = 0.005, approximately −62%). Perennial systems show the highest climate-adjusted EMM (2.71 log g/kg, ≈15.0 g/kg).
+- **Deepsoil (>60 cm):** Both temperature (β = −0.547, p < 0.001) and precipitation (β = −0.452, p < 0.001) show significant **negative** associations with SOC — a directional reversal from the surface pattern consistent with climate-driven decomposition and leaching in warm, wet lowland soils.
+
+---
+
+## Citation
+
 If you use the code or data in this repository, please cite:
 
-Tran, T. M. (2026). Depth Matters: Disentangling Climate and Management Drivers of Soil Organic Carbon Across Southeast Asian Agroecosystems. Senior Thesis, Denison University.
+> Tran, T. M. (2026). *Depth Matters: Disentangling Climate and Management Drivers of Soil Organic Carbon Across Southeast Asian Agroecosystems*. Senior Thesis, Denison University.
 
 And the underlying dataset:
 
-Gomez, C., et al. (2024). A dataset for soil organic carbon in agricultural systems for the Southeast Asia region. Scientific Data. https://doi.org/10.1038/s41597-024-03213-3
+> Gomez, C., et al. (2024). A dataset for soil organic carbon in agricultural systems for the Southeast Asia region. *Scientific Data*. https://doi.org/10.1038/s41597-024-03213-3
 
-License
-This repository is licensed under the MIT License.
+---
+
+## License
+
+This repository is licensed under the [MIT License](LICENSE).
