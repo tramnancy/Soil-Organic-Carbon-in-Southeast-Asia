@@ -16,12 +16,12 @@ This study analyzes 2,709 soil organic carbon (SOC) observations across nine Sou
 
 ## Code Authors
 
-- **Tram M. Tran**, Data Analytics & Sustainability and Environmental Studies, Denison University — [tran_n3@denison.edu](mailto:trant@denison.edu)
+- **Tram M. Tran**, Data Analytics & Sustainability and Environmental Studies, Denison University ([tran_n3@denison.edu](mailto:trant@denison.edu))
 
 ## Research Advisors
 
-- **Dr. Sarah R. Supp**, Denison University — [supps@denison.edu](mailto:supps@denison.edu)
-- **Dr. Thomas Henshaw**, Denison University — [henshawt@denison.edu](mailto:henshawt@denison.edu)
+- **Dr. Sarah R. Supp**, Denison University ([supps@denison.edu](mailto:supps@denison.edu))
+- **Dr. Thomas Henshaw**, Denison University ([henshawt@denison.edu](mailto:henshawt@denison.edu))
 
 ---
 
