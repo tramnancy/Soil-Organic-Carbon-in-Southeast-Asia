@@ -45,17 +45,6 @@ The following R packages must be installed before running any analysis files:
 | `emmeans` | Estimated Marginal Means for land-use comparisons |
 | `piecewiseSEM` | Piecewise Structural Equation Modeling |
 
-Install all packages with:
-
-```r
-install.packages(c(
-  "dplyr", "tidyr", "stringr", "readr",
-  "sf", "terra", "ggmap",
-  "ggplot2", "patchwork",
-  "randomForest", "lme4", "lmerTest",
-  "MuMIn", "emmeans", "piecewiseSEM"
-))
-```
 
 ---
 
@@ -69,7 +58,7 @@ This project uses the publicly available SOC dataset published by Gomez et al. (
 >
 > Dataset available on Figshare: [https://doi.org/10.6084/m9.figshare.23736891](https://doi.org/10.6084/m9.figshare.23736891)
 
-The dataset aggregates 4,341 observations from 209 peer-reviewed articles across nine Southeast Asian countries (1987–2023). After applying inclusion criteria, 2,709 observations were used in this analysis.
+The dataset aggregates 4341 observations from 209 peer-reviewed articles across nine Southeast Asian countries (1987–2023). After applying the inclusion criteria, 2699 observations were used in this analysis.
 
 ### Climate Data
 
@@ -77,7 +66,7 @@ Mean annual temperature (bio1, °C) and mean annual precipitation (bio12, mm) we
 
 > Karger, D. N., et al. (2021). Climatologies at high resolution for the Earth's land surface areas. *EnviDat*. [https://doi.org/10.16904/envidat.228](https://doi.org/10.16904/envidat.228)
 
-**Note on CHELSA temporal coverage:** CHELSA v2.1 represents 1981–2010 long-term climatological averages at each site location. These values capture site-level climatic context rather than year-of-measurement conditions. All 2,699 observations receive a CHELSA value regardless of their publication year (1987–2023); the 1981–2010 period defines the baseline grid, not the study period.
+**Note on CHELSA temporal coverage:** CHELSA v2.1 represents 1981–2010 long-term climatological averages at each site location. These values capture site-level climatic context rather than year-of-measurement conditions. All 2699 observations receive a CHELSA value regardless of their publication year (1987–2023); the 1981–2010 period defines the baseline grid, not the study period.
 
 CHELSA rasters must be downloaded separately from [https://chelsa-climate.org/](https://chelsa-climate.org/) and placed in the `Data/CHELSA/` directory before running the analysis. See `Data/CHELSA/README_chelsa.txt` for required file names.
 
@@ -93,7 +82,7 @@ Data/
 └── processed/
     ├── soc_main.csv            # Analysis-ready dataset (after cleaning and CHELSA merge)
     └── depth_subsets/
-        ├── depth_030.csv       # Topsoil observations (0–30 cm, n = 1,935)
+        ├── depth_030.csv       # Topsoil observations (0–30 cm, n = 1935)
         ├── depth_3060.csv      # Midsoil observations (30–60 cm, n = 351)
         └── depth_60.csv        # Deepsoil observations (>60 cm, n = 423)
 ```
@@ -187,8 +176,8 @@ All models were run separately for three depth strata: topsoil (0–30 cm), mids
 
 ## Key Findings
 
-- **Topsoil (0–30 cm):** Precipitation is the dominant positive predictor of SOC across all three modeling frameworks. Fertilization is the only management practice with a significant positive association with SOC (Coefficient = +0.217, p < 0.001, approximately +24%). Land-use type does not significantly differentiate topsoil SOC once climate is controlled (LMM: Annual Coefficient = −0.016, ns; Perennial β = +0.003, ns; EMM overall p = 0.8).
-- **Midsoil (30–60 cm):** Climate fixed effects lose significance. Annual cropping systems are associated with significantly lower SOC than agroforestry (Coefficient = −0.972, p = 0.005, approximately −62%). Perennial systems show the highest climate-adjusted EMM (2.71 log g/kg, ≈15.0 g/kg).
-- **Deepsoil (>60 cm):** Both temperature (Coefficient = −0.547, p < 0.001) and precipitation (Coefficient = −0.452, p < 0.001) show significant **negative** associations with SOC — a directional reversal from the surface pattern consistent with climate-driven decomposition and leaching in warm, wet lowland soils.
+- **Topsoil (0–30 cm):** Precipitation is the dominant positive predictor of SOC across all three modeling frameworks. Fertilization is the only management practice with a significant positive association with SOC (Coefficient = +0.217, p < 0.001, approximately +24%). Land-use type does not significantly differentiate topsoil SOC once climate is controlled (LMM: Annual Coefficient = −0.016, non-significant; Perennial Coefficient = +0.003, non-significant; EMM overall p = 0.8).
+- **Midsoil (30–60 cm):** Climate fixed effects lose significance. Annual cropping systems are associated with significantly lower SOC than agroforestry. Agroforestry shows the highest climate-adjusted EMM, substantially exceeding perennial and annual systems.
+- **Deepsoil (>60 cm):** Both temperature (Coefficient = −0.547, p < 0.001) and precipitation (Coefficient = −0.452, p < 0.001) show significant negative associations with SOC. This is a directional reversal from the surface pattern consistent with climate-driven decomposition and leaching in warm, wet lowland soils.
 
-
+This study provides the first convergent multi-method, multi-depth analysis of SOC drivers across the region and establishes a reproducible analytical template for future large-scale observational SOC research in tropical agroecosystems.
