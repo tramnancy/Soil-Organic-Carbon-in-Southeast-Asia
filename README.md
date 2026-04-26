@@ -66,8 +66,6 @@ Mean annual temperature (bio1, °C) and mean annual precipitation (bio12, mm) we
 
 > Karger, D. N., et al. (2021). Climatologies at high resolution for the Earth's land surface areas. *EnviDat*. [https://doi.org/10.16904/envidat.228](https://doi.org/10.16904/envidat.228)
 
-**Note on CHELSA temporal coverage:** CHELSA v2.1 represents 1981–2010 long-term climatological averages at each site location. These values capture site-level climatic context rather than year-of-measurement conditions. All 2699 observations receive a CHELSA value regardless of their publication year (1987–2023); the 1981–2010 period defines the baseline grid, not the study period.
-
 CHELSA rasters must be downloaded separately from [https://chelsa-climate.org/](https://chelsa-climate.org/) and placed in the `Data/CHELSA/` directory before running the analysis. See `Data/CHELSA/README_chelsa.txt` for required file names.
 
 ### Data Directory Structure
